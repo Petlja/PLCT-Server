@@ -1,0 +1,25 @@
+[tool.poetry]
+name = "plct-server"
+version = "0.1.0"
+description = ""
+authors = ["Nebojsa Vasiljevic <nebojsa.vasiljevic@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Development Status :: 3 - Alpha" ]
+
+[tool.poetry.dependencies]
+python = ">=3.9,<4.0"
+fastapi = ">=0.109,<1.0"
+uvicorn = ">=0.27,<1.0"
+rich = ">=13.0,<14.0"
+
+[tool.poetry.group.dev.dependencies]
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+plct-server = "plct_server.run_server:run"
