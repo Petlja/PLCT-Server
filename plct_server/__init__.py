@@ -11,3 +11,8 @@ if not logger.hasHandlers():
     handler.setFormatter(formatter)
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
+
+from .run_server import serve
+
+def register_extension_command(cli_group):
+    cli_group.add_command(serve)
