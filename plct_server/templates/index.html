@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PLCT Courses</title>
+</head>
+<body>
+<h1>PLCT Courses</h1>
+<ol>
+{% for course_id in course_ids %}
+
+
+    <li><a href='{{ course_id }}/index.html'>{{ course_dict[course_id].title}}</a></li>
+    
+{% endfor %}
+</ol>
+</body>
+</html>

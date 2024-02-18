@@ -1,8 +1,10 @@
 import uvicorn
 import click
-
+from logging import getLogger
 from .main import app
 from .content import set_cli_folders
+
+logger = getLogger(__name__)
 
 @click.command()
 @click.argument("folders", nargs=-1, type=click.Path(exists=True, file_okay=False, dir_okay=True))
@@ -13,7 +15,7 @@ def serve(folders: tuple[str], host: str, port: int) -> None:
     
     FOLDERS: The folders of PLCT projects to serve. If not provided, the current directory is used."""
 
-    print(f"folders: {folders}, host: {host}, port: {port}")
+    logger.info(f"folders: {folders}, host: {host}, port: {port}")
     
     set_cli_folders(folders)
 

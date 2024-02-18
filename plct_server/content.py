@@ -5,6 +5,7 @@ from typing import Sequence, Optional
 from plct_cli.project_config import ProjectConfig, get_project_config, ProjectConfigError
 import os
 from pydantic import BaseModel
+from click import UsageError
 
 
 class CourseConfig(BaseModel):
@@ -40,7 +41,7 @@ def set_cli_folders(folders: tuple[str]) -> None:
     if len(folders) == 0:
         content_config_file = os.environ.get("PLCT_SERVER_CONFIG_FILE")
         if content_config_file is None:
-            folders = (Path.cwd(),)
+            folders = ('./',)
         else:
             with open(content_config_file, 'r') as file:
                 content_config_dict = json.load(file)
@@ -55,29 +56,32 @@ def set_cli_folders(folders: tuple[str]) -> None:
     c_conf.course_dict = {}
     for folder in folders:
         if not Path(folder).is_dir():
-            raise ValueError(f"Folder {folder} does not exist.")
-        project_config = get_project_config(folder)
+            raise UsageError(f"Folder {folder} does not exist.")
+        try:
+            project_config = get_project_config(folder)
+        except ProjectConfigError:
+            raise UsageError(f"Folder {folder} is not a PLCT project.")
         if project_config.builder != "plct_builder":
-            raise ValueError(f"Folder {folder} is not a PLCT project.")
+            raise UsageError(f"Folder {folder} is not a PLCT project.")
         static_website_root = (Path(folder) / project_config.output_dir / 
                                 project_config.builder / "static_website")
 
         course_config_path =  static_website_root / "course.json"
         if not course_config_path.is_file():
-            raise ValueError(f"Course configuration file {course_config_path} does not exist.")
+            raise UsageError(f"Course configuration file {course_config_path} does not exist.")
         
         with open(course_config_path, 'r') as file:
             course_config = json.load(file)
 
         if "toc_tree" not in course_config:
-            raise ValueError(f"Course configuration file {course_config_path} does not contain toc_tree.")
+            raise UsageError(f"Course configuration file {course_config_path} does not contain toc_tree.")
         toc_tree = course_config["toc_tree"]
         if "title" not in toc_tree:
-            raise ValueError(f"Course configuration file {course_config_path} does not contain toc_tree.title.")
+            raise UsageError(f"Course configuration file {course_config_path} does not contain toc_tree.title.")
         if "meta_data" not in toc_tree:
-            raise ValueError(f"Course configuration file {course_config_path} does not contain tpc_tree.meta_data.")
+            raise UsageError(f"Course configuration file {course_config_path} does not contain tpc_tree.meta_data.")
         if "alias" not in toc_tree["meta_data"]:
-            raise ValueError(f"Course configuration file {course_config_path} does not contain toc_tree.meta_data.alias.")
+            raise UsageError(f"Course configuration file {course_config_path} does not contain toc_tree.meta_data.alias.")
         
         course_id = toc_tree["meta_data"]["alias"]
         course_config = CourseConfig(id=course_id, title=toc_tree["title"], 
