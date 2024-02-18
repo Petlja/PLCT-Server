@@ -1,7 +1,8 @@
 import uvicorn
 import click
 
-from plct_server.main import app, set_cli_folders
+from .main import app
+from .content import set_cli_folders
 
 @click.command()
 @click.argument("folders", nargs=-1, type=click.Path(exists=True, file_okay=False, dir_okay=True))
@@ -12,14 +13,11 @@ def serve(folders: tuple[str], host: str, port: int) -> None:
     
     FOLDERS: The folders of PLCT projects to serve. If not provided, the current directory is used."""
 
-    if not folders:
-        folders = ("./",)
-
     print(f"folders: {folders}, host: {host}, port: {port}")
     
     set_cli_folders(folders)
 
-    uvicorn.run(app, host=host, port=port)
+    uvicorn.run(app, host=host, port=port) 
 
 # This is the entry point for the server (see pyproject.toml)
 def main() -> None:
