@@ -7,13 +7,16 @@
 </head>
 <body>
 <h1>PLCT Courses</h1>
-<ol>
-{% for course_id in course_ids %}
 
+{% if course_ids|length == 0 %}
+    <p>No courses avaliable</p>
+{% else %}
+  <ol>
+  {% for course_id in course_ids %}
+      <li><a href='course/{{ course_id }}/index.html'>{{course_dict[course_id].title}}</a></li>
+  {% endfor %}
+  </ol>
+{% endif %}
 
-    <li><a href='{{ course_id }}/index.html'>{{ course_dict[course_id].title}}</a></li>
-    
-{% endfor %}
-</ol>
 </body>
 </html>
