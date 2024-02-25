@@ -1,4 +1,7 @@
 .venv/
+.venv2/
 poetry.lock
 __pycache__/
 dist/
+build/
+dev-server.json

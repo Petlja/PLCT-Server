@@ -1,0 +1,40 @@
+a.navbar-brand {
+  white-space: normal;
+  text-align: center;
+  word-break: break-all;
+}
+
+html {
+  font-size: 14px;
+}
+
+@media (min-width: 768px) {
+  html {
+    font-size: 16px;
+  }
+}
+
+.box-shadow {
+  box-shadow: 0 .25rem .75rem rgba(0, 0, 0, .05);
+}
+
+.answer-wrapper {
+    white-space: normal;
+    margin-bottom: -1rem;
+}
+
+pre {
+    background-color: #193a3a;
+    color: white;
+    padding: 0.5rem;
+    border-radius: 0.5rem;
+    white-space: pre-wrap;
+}
+
+.scrollbar-container {
+    touch-action: auto !important;
+}
+
+.answer-wrapper > div {
+    border-radius: 0.5rem;
+}

@@ -8,6 +8,18 @@ PLCT content is basically static HTML5, but some features of PLCT components may
 
 PLCT Server aims to provide the reference PLCT platform implementation suitable for development, demonstration, and simple production scenarios. PCLT Server is an OSS product designed to be easily adapted/integrated to meet specific needs.
 
+## Istall
+
+*This doesn't work just now, but plct-serve will be publised on PYPI soon*
+
+In youre active python environment just use the pip comand:
+
+```
+pip install plct-serve
+```
+
+Depending on how you have installed Python and configured active python environment, you may use alternative syntax to run the package installation.
+
 ## Usage
 
 You can run the PLCT Server either localy from command line (using an embeded web server) or deployed on a regular web server.
@@ -30,3 +42,50 @@ PLCT Server can be [deployed as a FastAPI app](https://fastapi.tiangolo.com/depl
 When deploying a PLCT website, the content is included in the deployment, similar to a static website, but with additional server-side processing. More dynamic content management and configuration may be implemented in an embedding FastAPI app.
 
 > TODO: explain each way in more detailes
+
+## Setting up development environment
+
+You need to have installed Git, Pyton, Poetry and Node.js/npm. If you don't have experience with all those tools, take a look at how to use them.
+
+Clone the repo into your local project folder.
+
+Create a Python virtual environment for the project and make it active. You may do this with or without Poetry, since Poetry works well in any active python virtual environment.
+
+Take care to have the Python virtual environment acitvated before continue. If you use terminal/console integrated in your IDE, set it up to have an appropriate virutal environment activated.
+
+Do initial install/build using npm:
+
+```
+pushd front-app
+npm install
+npm build
+popd
+poetry install
+```
+
+It's also okay if you have done `poetry install` previousy.
+
+## What is inside
+
+The `plct_server` folder the Python package with a FastAPI based server and the `front-app` folder contains a React front-end. 
+
+The `npm run build` command copies the `front-app\build` folder into `plct_server\front-app\build`. So, the FastAPI server servs both minimized bundles of the React front-end and the back-end API. FastAPI also serves some other web pages beyond th React front-end. 
+
+Thus, the architecture combines a single-page application (SPA) and server-side rendering within a single server, while maintaining simplicity from the end-user's perspective.
+
+## Run server in the development environment
+
+You can run the PLCT Server using `plct-serve` command as it is explained in the Usage section above, since the `poetry install` command makes dev install of the package you are developing (like `pip -e .`).
+
+When using the `plct-serve` command during development, you'll need to restart the server for any changes to take effect. Additionally, when you make changes to the React front-end, you need to execute `npm install`.
+
+You can ran the dev-mode server on `http://localhost:8000` using the `dev-server.cmd` or `dev-server.sh` script (depending on your OS). When run this way, the server will do live-reload on any change in the `plct_server` package.
+
+The *dev-server* script does't support arguments, but you may edit the `dev-server.json` file instaed. When you run the *dev-server* script first time, the `dev-server.json` file will be created as a copy of `dev-server.sample.json`.
+
+If you also require live reload for the React front-end, you can run the front-end server on `http://localhost:3000` by using the `npm start` command in the `front-app` folder.
+
+Through the front-end URL, you have full access to the PLCT Server because the front-end server forwards all non-front-end requests to `http://localhost:8000`.
+
+By using both the dev-mode server and the front-end server, you can achieve live reload for both the front-end and back-end changes.
+
