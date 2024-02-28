@@ -13,6 +13,7 @@ import { marked } from 'marked';
 import Select from 'react-select';
 import { AppContext } from "../AppContext";
 import  ChatSampleQuestions from "./ChatSampleQuestions";
+import { useSearchParams } from 'react-router-dom';
 
 const welcomeMessage: MessageModel = {
     direction: "incoming",
@@ -33,6 +34,7 @@ export function Chat() {
     const [history, setHistory] = useState<{ q: string; a: string }[]>([]);
     const [selectedOption, setSelectedOption] = useState<OptionType | null>(null);
     const context = useContext(AppContext);
+    const [searchParams] = useSearchParams();
 
     const options: OptionType[] = ChatSampleQuestions.map((l, i) => ({ label: l, value: i.toString() }));
 
@@ -43,11 +45,12 @@ export function Chat() {
         setSelectedOption(null);
     }
 
-    async function postQuestion(question: string, withHistory = true) {
+    async function postQuestion(question: string, contextAttributes = {}, withHistory = true) {
         const bodyJson = {
             "history": withHistory ? history : [],
             "question": question,
-            "accessKey": context?.accessKey ?? "default"
+            "accessKey": context?.accessKey ?? "default",
+            "contextAttributes": contextAttributes
         };
         const r = await fetch(
             "../api/chat",
@@ -77,8 +80,19 @@ export function Chat() {
 
         setMessages([...messages, outMessage]);
 
-        const r = await postQuestion(textContent);
+        let contextAttributes: {[key:string]:string}= {}; // TODO: implement context attributes
 
+        let course_key = searchParams.get("course_key")
+        
+        if(course_key) {
+            contextAttributes["course_key"] = course_key
+        }
+        let activity_key = searchParams.get("activity_key")
+        if(activity_key) {
+            contextAttributes["activity_key"] = activity_key
+        }
+        const r = await postQuestion(textContent, contextAttributes)
+        
         var answerText = ""
 
         const reader = r.body!.getReader()
@@ -105,7 +119,7 @@ export function Chat() {
 
     useEffect(() => {
         async function testAuth() {
-            const r = await postQuestion("_test", false);
+            const r = await postQuestion("_test", {}, false);
             const testAnswer = await r.text()
             if (testAnswer === "_OK") {
                 setAuth("ok");
@@ -122,6 +136,7 @@ export function Chat() {
              <div>
                 <h1>Programiranje u Pajtonu (gpt-4)</h1>
                 <p>Pitanja koje postaviš i dati odgovori ostaju sačuvani u bazi radi unapređivanja rešenja. U pitanjima nemoj unositi lične niti bilo koje druge osetljive podatke.</p>
+                <p>Couse key: '{searchParams.get("course_key")}', activity key: '{searchParams.get("activity_key")}'</p>
                 <MainContainer responsive>
                     <ChatContainer>
                         <MessageList
@@ -150,7 +165,6 @@ export function Chat() {
                     onChange={handleOptionChange}
                     placeholder="Možeš pregledati i izabrati neke primere pitanja..."
                     isDisabled={isAnswering}
-
                 />
             </div>
         );

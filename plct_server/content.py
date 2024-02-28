@@ -34,7 +34,7 @@ class ContentConfig(BaseModel):
 
     # Attributes derived from the original config values
     course_ids: list[str] = None
-    course_dict: dict[str, CourseConfig] = None # course_id -> course_config
+    course_dict: dict[str, CourseConfig] = None # course_key -> course_config
 
     def abspath(self, path: str) -> str:
         """Return the absolute path of a file or directory relative to the base path."""
@@ -156,7 +156,7 @@ def _apply_conf(c_conf: ContentConfig) -> None:
 
                 course_config.ai_context = ai_context
 
-    logger.debug(f"Content configuration: {c_conf} ")
+    #logger.debug(f"Content configuration: {c_conf} ")
     global _current_content_config
     _current_content_config = c_conf
 
