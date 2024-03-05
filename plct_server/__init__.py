@@ -11,7 +11,6 @@ if not logger.hasHandlers():
     handler.setFormatter(formatter)
     logger.addHandler(handler)
 
-from .run_server import serve
-
 def register_extension_command(cli_group):
+    from .cli_main import serve
     cli_group.add_command(serve)

@@ -8,6 +8,10 @@ from pydantic import BaseModel
 from click import UsageError
 import logging
 
+import yaml
+
+from . import ai
+
 logger = logging.getLogger(__name__)
 
 class CourseConfig(BaseModel):
@@ -25,9 +29,8 @@ class ContentConfig(BaseModel):
 _current_content_config: ContentConfig = None
 
 def get_content_config() -> ContentConfig:
-    global _current_content_config
     if _current_content_config is None:
-        configure()
+        raise ValueError("Content configuration not initialized.")
     return _current_content_config
 
 def configure(*, course_dirs: tuple[str] = None, verbose: bool = None) -> None:
@@ -100,6 +103,11 @@ def configure(*, course_dirs: tuple[str] = None, verbose: bool = None) -> None:
             c_conf.course_ids.append(course_id)
             c_conf.course_dict[course_id] = course_config
 
-    logger.debug(f"Content configuration: {c_conf}")
+    logger.debug(f"Content configuration: {c_conf} ")
+    if c_conf.ai_context_dir:
+        ai.init(c_conf.abspath(c_conf.ai_context_dir))
+
+    #logger.debug(f"Content configuration: {c_conf} ")
+    global _current_content_config
     _current_content_config = c_conf
 

@@ -1,14 +1,13 @@
 import logging
-from datetime import datetime
 import os
-from typing import List, Optional
-from fastapi import APIRouter, Body, HTTPException, Response
+from typing import List
+from fastapi import APIRouter, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from openai import AsyncOpenAI
+from openai import OpenAIError
 
-
-
+from ..content import get_content_config
+from ..ai import get_engine
 
 logger = logging.getLogger(__name__)
 
@@ -27,16 +26,9 @@ class ChatInput(BaseModel):
 logger = logging.getLogger(__name__)
 # logger.setLevel(logging.DEBUG)
 
-system_message = (
-    "Keep in the context of learning to code in Python.\n\n"
-    "Format output with Markdown.\n\n"
-    "Odgovori na postavljeno pitanje na srpskom, latinicom.\n\n"
-    "Avoid Python builtin functions sum, min, and max.\n\n"
-    "Uvek pokušaj da daš primer u Pajtonu i objašnjenje.\n\n"
-    "Ako nisi siguran, odgovori 'nisam siguran, pokušaj da preformulišeš pitanje'."
-)
 
 OPENAI_API_KEY = os.environ["CHATAI_OPENAI_API_KEY"]
+
 
 @router.post("/api/chat")
 async def post_question(response: Response, input: ChatInput):
@@ -53,28 +45,20 @@ async def post_question(response: Response, input: ChatInput):
     if input.question == "_test":
         return Response("_OK", media_type="text/plain")
 
+    get_content_config()
+    ai_engine = get_engine()
+
+    logger.debug(f"Context attributes: {input.contextAttributes}")
+    course_key = input.contextAttributes.get("course_key")
+    activity_key = input.contextAttributes.get("activity_key")
+    history = [(item.q, item.a) for item in input.history]
+
     try:
-        client = AsyncOpenAI(api_key = OPENAI_API_KEY)
-        messages=[{"role": "system", "content": system_message}]
-        for item in input.history:
-            messages.append({"role": "user", "content": item.q})
-            messages.append({"role": "assistant", "content": item.a})
-        messages.append({"role": "user", "content": input.question})
-        completion = await client.chat.completions.create(
-            model="gpt-4-0125-preview",
-            messages=messages,
-            stream=True,
-            max_tokens=2000,
-            temperature=0,
-            stop=["\nQ:", "\nA:"],
-        )
-
-        async def response_generator():
-            async for chunk in completion:
-                yield chunk.choices[0].delta.content or ""
-
-        return StreamingResponse(response_generator(), media_type="text/plain")
-    except Exception as e:
+        g = await ai_engine.generate_answer(
+            history=history, query=input.question, 
+            course_key=course_key, activity_key=activity_key)
+        return StreamingResponse(g, media_type="text/plain")
+    except OpenAIError as e:
         logger.warn(f"Error while calling OpenAI API: {e}")
         return Response("Ima tehničkih problema sa pristupom OpenAI, malo sačekaj pa pokušaj ponovo",
                          media_type="text/plain")
