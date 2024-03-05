@@ -10,6 +10,8 @@ import logging
 
 import yaml
 
+from . import ai
+
 logger = logging.getLogger(__name__)
 
 
@@ -47,9 +49,8 @@ class ContentConfig(BaseModel):
 _current_content_config: ContentConfig = None
 
 def get_content_config() -> ContentConfig:
-    global _current_content_config
     if _current_content_config is None:
-        configure()
+        raise ValueError("Content configuration not initialized.")
     return _current_content_config
 
 def configure(*, course_dirs: tuple[str] = None, verbose: bool = None,
@@ -129,32 +130,9 @@ def _apply_conf(c_conf: ContentConfig) -> None:
             c_conf.course_ids.append(course_id)
             c_conf.course_dict[course_id] = course_config
 
+    logger.debug(f"Content configuration: {c_conf} ")
     if c_conf.ai_context_dir:
-        dir = c_conf.abspath(c_conf.ai_context_dir)
-        if not os.path.isdir(dir):
-            raise UsageError(f"AI context directory {dir} does not exist.")
-        
-        for course_id in c_conf.course_ids:
-            summary_yaml_path = f'{dir}/{course_id}/summary.yaml'
-            if os.path.isfile(summary_yaml_path):
-                course_config = c_conf.course_dict[course_id]
-                with open(f"{dir}/{course_id}/short-summary.txt", 'r') as file:
-                    course_summary = file.read()
-                ai_context = CourseAiContext(summary=course_summary, activity_summary={})
-                
-                with open(summary_yaml_path, 'r') as file:
-                    summary_yaml_str = file.read()
-
-                symmary_yaml = yaml.safe_load(summary_yaml_str)
-
-                for activity in symmary_yaml["activities"]:
-                    summaryPath = os.path.join(os.path.dirname(dir), activity["summaryPath"])
-                    with open(summaryPath, "r") as f:
-                        activity_summary = f.read()
-
-                    ai_context.activity_summary[activity["guid"]] = activity_summary
-
-                course_config.ai_context = ai_context
+        ai.init(c_conf.abspath(c_conf.ai_context_dir))
 
     #logger.debug(f"Content configuration: {c_conf} ")
     global _current_content_config
