@@ -3,7 +3,7 @@
 const { createProxyMiddleware } = require('http-proxy-middleware');
 const path = require('path');
 
-filterRegexp = new RegExp('^/course|^/api|^/index.html|^/$');
+filterRegexp = new RegExp('^/course|^/api|^/index.html|^/docs|^/$');
 
 function filter(pathname, req) {
     return filterRegexp.test(pathname);

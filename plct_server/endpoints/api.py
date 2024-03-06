@@ -6,8 +6,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from openai import OpenAIError
 
-from ..content import get_content_config
-from ..ai import get_engine
+from ..content.server import get_server_content
+from ..ai.engine import get_ai_engine
 
 logger = logging.getLogger(__name__)
 
@@ -46,8 +46,7 @@ async def post_question(response: Response, input: ChatInput):
     if input.question == "_test":
         return Response("_OK", media_type="text/plain")
 
-    get_content_config()
-    ai_engine = get_engine()
+    ai_engine = get_ai_engine()
 
     logger.debug(f"Context attributes: {input.contextAttributes}")
     course_key = input.contextAttributes.get("course_key")
@@ -79,7 +78,42 @@ async def post_question(response: Response, input: ChatInput):
     # except Exception as e:
     #     logger.error(f"Database error: {e}")
 
-    
+class CourseItem(BaseModel):
+    title: str
+    course_key: str
+
+@router.get("/api/courses")
+async def get_courses() -> List[CourseItem]:
+    srv_cnt = get_server_content()
+
+    courses = [CourseItem(title=course.title, course_key=course.course_key) for course in srv_cnt.course_dict.values()]
+    return courses
+
+class TocItemRequest(BaseModel):
+    key: str
+    item_path: list[str]
+
+class TocItemResponse(BaseModel):
+    key: str
+    title: str
+
+@router.post("/api/toc-item")
+async def get_toc_item(input: TocItemRequest) -> TocItemResponse:
+    srv_cnt = get_server_content()
+    item = srv_cnt.get_toc_item(input.key, input.item_path)
+    if item is None:
+        return TocItemResponse(key="", title="")
+    return TocItemResponse(key=item.key, title=item.title)
+
+@router.post("/api/toc-list")
+async def get_toc_list(response: Response, input: TocItemRequest) -> List[TocItemResponse]:
+    srv_cnt = get_server_content()
+    items = srv_cnt.get_toc_list(input.key, input.item_path)
+    if items is None:
+        return []
+    return [TocItemResponse(key=item.key, title=item.title) for item in items]
+
+
 
 
 

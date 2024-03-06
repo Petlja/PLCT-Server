@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from .endpoints import router
-from . import content
+from .content.server import configure
 
-content.configure()
+configure()
 app = FastAPI()
 app.include_router(router)
