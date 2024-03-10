@@ -3,7 +3,7 @@ import click
 from logging import getLogger
 from fastapi import FastAPI
 from .endpoints import router
-from . import content
+from .content import server
 
 logger = getLogger(__name__)
 
@@ -20,10 +20,12 @@ def serve(folders: tuple[str], host: str, port: int, verbose:bool, ai_context:st
 
     logger.info(f"folders: {folders}, host: {host}, port: {port}")
     
-    content.configure(course_dirs = folders, verbose = verbose, ai_context_dir = ai_context)
-
+    server.configure(
+        course_dirs = folders, verbose = verbose, 
+        ai_context_dir = ai_context)
     app = FastAPI()
     app.include_router(router)
+
     uvicorn.run(app, host=host, port=port) 
 
 # This is the entry point for the server (see pyproject.toml)

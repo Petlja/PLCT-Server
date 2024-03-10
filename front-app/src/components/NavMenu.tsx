@@ -15,12 +15,12 @@ export function NavMenu() {
     return (
         <header>
             <Navbar className="navbar-expand-sm navbar-toggleable-sm ng-white border-bottom box-shadow mb-3" container light>
-                <NavbarBrand tag={Link} to={"/"}>PLCT Server Extra</NavbarBrand>
+                <NavbarBrand tag={Link} to={"/"}>PLCT Server</NavbarBrand>
                 <NavbarToggler onClick={toggleCollapsed} className="mr-2" />
                 <Collapse className="d-sm-inline-flex flex-sm-row-reverse" isOpen={isCollapsed} navbar>
                     <ul className="navbar-nav flex-grow">
                         <NavItem>
-                            <NavLink tag={Link} className="text-dark" to={"/"}>Naslovna</NavLink>
+                            <NavLink tag={Link} className="text-dark" to={"/"}>Kursevi</NavLink>
                         </NavItem>
                         <NavItem>
                             <NavLink tag={Link} className="text-dark" to={"/chat"}>Chat</NavLink>

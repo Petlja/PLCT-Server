@@ -17,40 +17,82 @@ import { useSearchParams } from 'react-router-dom';
 
 const welcomeMessage: MessageModel = {
     direction: "incoming",
-    message: "Pitaj šta želiš o programiranju u Pajtonu",
+    message: "Pitaj u vezi sadržaja kursa",
     position: "normal",
     sender: "Čet.kabinet",
 };
-
-interface OptionType {
-    label: string;
-    value: string;
-}
 
 export function Chat() {
     const [messages, setMessages] = useState<MessageModel[]>([welcomeMessage]);
     const [isAnswering, setAnswering] = useState(false);
     const [auth, setAuth] = useState("pending");
     const [history, setHistory] = useState<{ q: string; a: string }[]>([]);
-    const [selectedOption, setSelectedOption] = useState<OptionType | null>(null);
     const context = useContext(AppContext);
     const [searchParams] = useSearchParams();
+    const [courseKey, setCourseKey] = useState<string>("-");
+    const [courseList, setCourseList] = useState<{course_key: string; title: string}[]>([{course_key: '-', title: '---'}]);
+    const [lessonKey, setLessonKey] = useState<string>("-");
+    const [lessonList, setLessonList] = useState<{key: string; title: string}[]>([{key: '-', title: '---'}]);
+    const [activitiyKey, setActivityKey] = useState<string>("-");
+    const [activityList, setActivityList] = useState<{key: string; title: string}[]>([{key: '-', title: '---'}]);
 
-    const options: OptionType[] = ChatSampleQuestions.map((l, i) => ({ label: l, value: i.toString() }));
-
-    async function handleOptionChange(selectedOption: OptionType | null) {
-        if (selectedOption) {
-            await handleSend(selectedOption.label);
-        }
-        setSelectedOption(null);
+    async function handleCourseChange() {
+        const r_lessons = await fetch(
+            `../api/toc-list`,
+            {
+                method: 'post',
+                body: JSON.stringify({ key: courseKey, item_path: []  }),
+                headers: {
+                    "Accept": "application/json",
+                    "Content-Type": "application/json"
+                }
+            });
+        const lessons = await r_lessons.json();
+        console.log(lessons);
+        setLessonList(lessons);
+        if (lessons.length > 0)
+            setLessonKey(lessons[0].key)
     }
 
-    async function postQuestion(question: string, contextAttributes = {}, withHistory = true) {
+    useEffect(() => {
+        if (courseKey !== "-")
+            handleCourseChange();
+    }, [courseKey]); 
+      
+    async function handleLessonChange() {
+        const r_activities = await fetch(
+            `../api/toc-list`,
+            {
+                method: 'post',
+                body: JSON.stringify({ key: courseKey, item_path: [lessonKey]  }),
+                headers: {
+                    "Accept": "application/json",
+                    "Content-Type": "application/json"
+                }
+            });
+        const activities = await r_activities.json()
+        setActivityList(activities)
+        if (activities.length > 0)
+            await setActivityKey(activities[0].key)
+    }
+
+    useEffect(() => {
+        if (lessonKey !== "-")
+            handleLessonChange();
+    }, [lessonKey]); 
+
+    useEffect(() => {
+        if(activitiyKey !== "-")
+            setMessages([welcomeMessage])
+            setHistory([])
+    }, [activitiyKey]);
+
+    async function postQuestion(question: string, withHistory = true) {
         const bodyJson = {
             "history": withHistory ? history : [],
             "question": question,
             "accessKey": context?.accessKey ?? "default",
-            "contextAttributes": contextAttributes
+            "contextAttributes": {"activity_key": activitiyKey, "course_key": courseKey}
         };
         const r = await fetch(
             "../api/chat",
@@ -58,7 +100,7 @@ export function Chat() {
                 method: 'POST',
                 body: JSON.stringify(bodyJson),
                 headers: {
-                    Accept: "application/json",
+                    "Accept": "application/json",
                     "Content-Type": "application/json"
                 }
             });
@@ -80,18 +122,7 @@ export function Chat() {
 
         setMessages([...messages, outMessage]);
 
-        let contextAttributes: {[key:string]:string}= {}; // TODO: implement context attributes
-
-        let course_key = searchParams.get("course_key")
-        
-        if(course_key) {
-            contextAttributes["course_key"] = course_key
-        }
-        let activity_key = searchParams.get("activity_key")
-        if(activity_key) {
-            contextAttributes["activity_key"] = activity_key
-        }
-        const r = await postQuestion(textContent, contextAttributes)
+        const r = await postQuestion(textContent)
         
         var answerText = ""
 
@@ -118,8 +149,21 @@ export function Chat() {
     }
 
     useEffect(() => {
-        async function testAuth() {
-            const r = await postQuestion("_test", {}, false);
+        async function init() {
+            const r_courses = await fetch(
+                "../api/courses",
+                {
+                    method: 'GET',
+                    headers: {
+                        "Accept": "application/json"
+                    }
+                });
+            const courses = await r_courses.json()
+            setCourseList(courses);
+            if (courses.length > 0)
+                setCourseKey(courses[0].course_key)
+            
+            const r = await postQuestion("_test", false);
             const testAnswer = await r.text()
             if (testAnswer === "_OK") {
                 setAuth("ok");
@@ -128,15 +172,26 @@ export function Chat() {
                 setAuth("fail");
             }
         }
-        testAuth();
+        init();
     }, []);
 
     if (auth === "ok") {
         return (
              <div>
-                <h1>Programiranje u Pajtonu (gpt-4)</h1>
+                <h2>Izaberi kurs i lekciju, pa postavi pitanje</h2>
                 <p>Pitanja koje postaviš i dati odgovori ostaju sačuvani u bazi radi unapređivanja rešenja. U pitanjima nemoj unositi lične niti bilo koje druge osetljive podatke.</p>
-                <p>Couse key: '{searchParams.get("course_key")}', activity key: '{searchParams.get("activity_key")}'</p>
+                <select className="form-select" value={courseKey} onChange={(e) => setCourseKey(e.target.value)}>
+                    {courseList.map((c, i) => <option key={i} value={c.course_key}>{c.title}</option>)}
+                </select>
+                <br />
+                <select className="form-select" value={lessonKey} onChange={(e) => setLessonKey(e.target.value)}>
+                    {lessonList.map((c, i) => <option key={i} value={c.key}>{c.title}</option>)}
+                </select>
+                <br />
+                <select className="form-select" value={activitiyKey} onChange={(e) => setActivityKey(e.target.value)}>
+                    {activityList.map((c, i) => <option key={i} value={c.key}>{c.title}</option>)}
+                </select>
+                <br />
                 <MainContainer responsive>
                     <ChatContainer>
                         <MessageList
@@ -159,13 +214,6 @@ export function Chat() {
                     </ChatContainer>
                 </MainContainer>
                 <br />
-                <Select
-                    options={options}
-                    value={selectedOption}
-                    onChange={handleOptionChange}
-                    placeholder="Možeš pregledati i izabrati neke primere pitanja..."
-                    isDisabled={isAnswering}
-                />
             </div>
         );
     }

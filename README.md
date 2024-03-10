@@ -8,7 +8,7 @@ PLCT content is basically static HTML5, but some features of PLCT components may
 
 PLCT Server aims to provide the reference PLCT platform implementation suitable for development, demonstration, and simple production scenarios. PCLT Server is an OSS product designed to be easily adapted/integrated to meet specific needs.
 
-## Istall
+## Install
 
 *This doesn't work just now, but plct-serve will be publised on PYPI soon*
 
@@ -29,15 +29,17 @@ Ways to run localy from command line:
   ```
   plct-serve [OPTIONS] [FOLDERS]
   ```
-- use as an extension of a Python CLI app that is based on the `click` package, like with PLCT CLI:  
+- use as an extended command of PLCT CLI:  
   ```
   plct serve [OPTIONS] [FOLDERS]
   ```
 
+Use `plct-serve --help` to se supported options.
+
 PLCT Server can be [deployed as a FastAPI app](https://fastapi.tiangolo.com/deployment/), or more generally, as a Python ASGI web application that is supported by most web servers and PaaS providers:
 - run the `plct_server.main:app` using an ASGI web server and the `PLCT_SERVER_CONFIG_FILE` environment variable
 
-- embed the PLCT Server into your FastAPI app using the `router` object from the `plct_server.endpoints` module
+- embed the PLCT Server into your FastAPI app (source of the `plct_server.main` module may be a starting point)
 
 When deploying a PLCT website, the content is included in the deployment, similar to a static website, but with additional server-side processing. More dynamic content management and configuration may be implemented in an embedding FastAPI app.
 
@@ -49,7 +51,7 @@ You need to have installed Git, Pyton, Poetry and Node.js/npm. If you don't have
 
 Clone the repo into your local project folder.
 
-Create a Python virtual environment for the project and make it active. You may do this with or without Poetry, since Poetry works well in any active python virtual environment.
+Create a Python virtual environment for the project and make it active. You may use Poetry to create the virtual environment, but you also can keep using whatever you want since Poetry works well in any active Python virtual environment.
 
 Take care to have the Python virtual environment acitvated before continue. If you use terminal/console integrated in your IDE, set it up to have an appropriate virutal environment activated.
 
@@ -88,4 +90,10 @@ If you also require live reload for the React front-end, you can run the front-e
 Through the front-end URL, you have full access to the PLCT Server because the front-end server forwards all non-front-end requests to `http://localhost:8000`.
 
 By using both the dev-mode server and the front-end server, you can achieve live reload for both the front-end and back-end changes.
+
+# Using AI context dataset
+
+Yo can use `--ai-context` CLI or `ai_context_dir` config file option to specify the directory of a context dataset.
+
+Yo can use `plct_server.ai.context_dataset` module in you scipt to create context dataset. 
 
