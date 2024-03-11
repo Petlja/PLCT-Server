@@ -1,5 +1,5 @@
 preprocess_system_message_template = (
-    "Consider the question in the context of the folowing course and lesson.\n\n"
+    "Consider the context of the folowing course and lesson.\n\n"
     "Here is the course summery delimited by triple quotes:\n\n"
     "'''\n"
     "{course_summary}\n"
@@ -45,6 +45,6 @@ system_message_summay_template = (
 )
 
 system_message_rag_template = (
-    "Тhe question may be out of the scope of the above course and lesson, if it is related to the folowing.\n\n"
+    "If the question is out of the scope of the above course and lesson, also consider the following.\n\n"
     "{chunks}\n\n"
 )

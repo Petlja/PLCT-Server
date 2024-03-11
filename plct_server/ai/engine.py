@@ -112,6 +112,7 @@ class AiEngine:
 
         result =collection.query(
             query_embeddings=[query_embedding],
+            where={"course_key": course_key},
             n_results=2)
 
         chunk_strs = []
