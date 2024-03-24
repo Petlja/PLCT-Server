@@ -1,4 +1,5 @@
 {
     "verbose": false,
-    "course_project_dirs": []
+    "course_project_dirs": [],
+    "api_key": null
 }

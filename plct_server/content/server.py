@@ -23,6 +23,7 @@ class ConfigOptions(BaseModel):
     ai_context_dir: str = None
     verbose: bool = None
     base_path: str = None
+    api_key: str = None
 
 class ServerContent:
 

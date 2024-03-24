@@ -30,7 +30,7 @@ def get_ai_engine() -> "AiEngine":
         raise ValueError(f"{__name__} not initialized, call {__name__}.init first")
     return ai_engine
 
-EMBEDING_SIZE = 256
+EMBEDING_SIZE = 1536
 EMBEDING_MODEL = "text-embedding-3-small"
 CHROMADB_COLLECTION_NAME = f"{EMBEDING_MODEL}-{EMBEDING_SIZE}"
 
@@ -56,19 +56,24 @@ class AiEngine:
             metadatas=metadatas
         )
 
-    async def preprocess_query(self, qyery: str, course_key: str, activity_key: str) -> str:
+    async def preprocess_query(self, history: list[tuple[str,str]], qyery: str, course_key: str, activity_key: str) -> str:
         course_summary, lesson_summary = self.ctx_data.get_summary_texts(
             course_key, activity_key)
+        
         system_message = preprocess_system_message_template.format(
             course_summary=course_summary,
             lesson_summary=lesson_summary
         )
 
-        preprocessed_query = preprocess_user_message_template.format(
+        preprocessed_user_message = preprocess_user_message_template.format(
             user_input=qyery
         )
-        messages=[{"role": "system", "content": system_message},
-              {"role": "user", "content": preprocessed_query}]
+
+        messages=[{"role": "system", "content": system_message}]
+        for item in history:
+            messages.append({"role": "user", "content": item[0]})
+            messages.append({"role": "assistant", "content": item[1]})
+        messages.append({"role": "user", "content": preprocessed_user_message})
     
         client = AsyncOpenAI(api_key = OPENAI_API_KEY)
 
@@ -80,12 +85,12 @@ class AiEngine:
             temperature=0
         )
 
-        preprocessed_query = qyery + '\n' + completion.choices[0].message.content
-        logger.debug(f"preprocessed_query: {preprocessed_query}")
-        return preprocessed_query
+        preprocessed_user_message = qyery + '\n' + completion.choices[0].message.content
+        logger.debug(f"preprocessed_query: {preprocessed_user_message}")
+        return preprocessed_user_message
     
-    async def make_system_message(self, qyery: str, course_key: str, activity_key: str) -> str:
-        preprocessed_query = await self.preprocess_query(qyery, course_key, activity_key)
+    async def make_system_message(self, history: list[tuple[str,str]], qyery: str, course_key: str, activity_key: str) -> str:
+        preprocessed_query = await self.preprocess_query(history, qyery, course_key, activity_key)
         
         course_summary, lesson_summary = self.ctx_data.get_summary_texts(course_key, activity_key)
 
@@ -131,10 +136,9 @@ class AiEngine:
     async def generate_answer(self,*, history: list[tuple[str,str]], query: str,
                             course_key: str, activity_key: str) -> AsyncIterator[int]:
         
-        system_message = await self.make_system_message(query, course_key, activity_key)
+        system_message = await self.make_system_message(history, query, course_key, activity_key)
         
         messages=[{"role": "system", "content": system_message}]
-
         for item in history:
             messages.append({"role": "user", "content": item[0]})
             messages.append({"role": "assistant", "content": item[1]})
