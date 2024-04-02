@@ -6,6 +6,8 @@ from typing import AsyncIterator
 import chromadb
 from openai import AsyncOpenAI, OpenAI
 from pydantic import BaseModel
+
+from plct_server.content.fileset import FileSet
 from .context_dataset import ContextDataset
 from . import OPENAI_API_KEY
 
@@ -18,11 +20,13 @@ logger = logging.getLogger(__name__)
 
 ai_engine: "AiEngine" = None
 
-def init(ai_context_dir: str):
+def init(base_url: str):
     global ai_engine
-    if ai_engine is not None:
+    if ai_engine is None:
+        ai_engine = AiEngine(base_url)
+    else:
         raise ValueError(f"{__name__} already initialized")
-    ai_engine = AiEngine(ai_context_dir)
+    
 
 def get_ai_engine() -> "AiEngine":
     global ai_engine
@@ -35,9 +39,9 @@ EMBEDING_MODEL = "text-embedding-3-small"
 CHROMADB_COLLECTION_NAME = f"{EMBEDING_MODEL}-{EMBEDING_SIZE}"
 
 class AiEngine:
-    def __init__(self, ai_context_dir: str):
-        logger.debug(f"ai_context_dir: {ai_context_dir}")
-        self.ctx_data = ContextDataset(ai_context_dir, load=True)
+    def __init__(self, base_url: str):
+        logger.debug(f"ai_context_dir: {base_url}")
+        self.ctx_data = ContextDataset(base_url, load=True)
         self.ch_cli = chromadb.Client()
         #self.course_summaries: dict[str,CourseSummary] = {}
         self._load_embeddings()

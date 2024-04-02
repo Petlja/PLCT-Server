@@ -46,6 +46,12 @@ def safe_join(base_directory:str, relative_path:str):
 
     return final_path
 
+def safe_url_join(base_url:str, relative_path:str):
+    base_url_parsed = urlparse(base_url)
+    new_path = safe_join(base_url_parsed.path, relative_path)
+    new_url = base_url_parsed._replace(path=new_path).geturl()
+    return new_url
+
 def not_found_page(request: Request):
     return templates.TemplateResponse(
         "404.html", {"request": request}, 
@@ -73,7 +79,7 @@ async def read_index(request: Request):
     return RedirectResponse(url="app/")
 
 @router.get("/course/{path_param:path}")
-async def read_html(request: Request, path_param: str):
+async def read_course_file(request: Request, path_param: str):
     srv_cnt = get_server_content()
     logger.debug(f"path_param: '{path_param}'")
 
@@ -88,15 +94,6 @@ async def read_html(request: Request, path_param: str):
     
     course_content = srv_cnt.course_dict[course_key]
 
-    try:
-        file_path = safe_join(str(course_content.static_website_root), 
-                              course_rel_path)
-    except ValueError:
-        logger.warn(f"Path traversal attempt detected: {course_rel_path}")
-        return not_found_page(request)
+    return course_content.html_fs.fastapi_response(request, course_rel_path)
 
-    if os.path.isfile(file_path):
-        return FileResponse(file_path)
-    else:
-        return not_found_page(request)
     
