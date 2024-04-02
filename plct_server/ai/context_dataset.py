@@ -1,11 +1,14 @@
 import glob
 import hashlib
+import io
 import json
 import logging
 import os
 from dataclasses import dataclass
+import re
 import openai
 from pydantic import BaseModel
+import zstandard as zstd
 
 from ..content.fileset import FileSet, LocalFileSet
 from ..ioutils import read_json, read_str, write_str
@@ -31,33 +34,16 @@ class ChunkMetadata(BaseModel):
     lesson_title: str
     activity_title: str
 
-class ContextDataset:
-    fs: FileSet
+class ContextDatasetBuilder:
+    base_dir: str
+    
     course_dict: dict[str, CourseSummary]
-    loaded_index: dict
 
-    @property
-    def base_dir(self):
-        if not isinstance(self.fs, LocalFileSet):
-            raise ValueError("fs must be a LocalFileSet")
-        return self.fs.base_dir
-
-    def __init__(self, base_url: str, *, load: bool = False):
-        self.fs = FileSet.from_base_url(base_url)
+    def __init__(self, base_dir: str):
+        self.base_dir = base_dir
         self.course_dict = {}
-        if load:
-            self.loaded_index = self.fs.read_json("index.json")
-            for course_key in self.loaded_index["courses"]:
-                    summary_str = self.fs.read_str(self._course_metadata_path(course_key))
-                    course_summary = CourseSummary.model_validate_json(summary_str)
-                    self.course_dict[course_summary.course_key] = course_summary
 
-    def _course_metadata_path(self, course_key: str):
-        return f"{course_key}/summary.json"
-
-    # Dataset creation API
-
-    def store_course(self, *, course_key: str, course_title: str, summary_text, db_id: int = None):
+    def add_course(self, *, course_key: str, course_title: str, summary_text, db_id: int = None):
         course_summary = CourseSummary(
             course_key=course_key, db_id=db_id, title=course_title,
             summary_text_path="summaries/course-summary.txt", activities={})
@@ -67,7 +53,7 @@ class ContextDataset:
         write_str(summary_text_path, summary_text)
         
     
-    def store_activity(self,*, course_key: str, activity_key: str, activity_title: str, summary_text_rel_path: str, summary_text: str):
+    def add_activity(self,*, course_key: str, activity_key: str, activity_title: str, summary_text_rel_path: str, summary_text: str):
         if course_key not in self.course_dict:
             raise ValueError(f"Course {course_key} not found")
         summary_text_path = os.path.join(self.base_dir, course_key, summary_text_rel_path)
@@ -77,7 +63,7 @@ class ContextDataset:
         self.course_dict[course_key].activities[activity_key] = activity_summary
         
 
-    def store_chunck(self, chunk_text: str, chunk_meta: ChunkMetadata, 
+    def add_chunck(self, chunk_text: str, chunk_meta: ChunkMetadata, 
                      embeding_model:str, embeding_sizes: list[int]):
         chunk_hash = hashlib.sha256(chunk_text.encode('utf-8')).hexdigest()
         logger.info(f"Hash: {chunk_hash}, TextLengt: {len(chunk_text)}")
@@ -103,15 +89,15 @@ class ContextDataset:
                 embeding_json_str = json.dumps(embeding)
                 write_str(embeding_path, embeding_json_str)
 
-    def flush_metadata(self):
+    def flush_changes(self):
         for course_key, course_summary in self.course_dict.items():
-            json_file = os.path.join(self.base_dir, self._course_metadata_path(course_key))
+            json_file = os.path.join(self.base_dir, course_key, "summary.json")
             course_summary_json = course_summary.model_dump_json(indent=2)
             write_str(json_file, course_summary_json)
 
     def update_index(self):
         course_keys = []
-        cpurse_pattern = os.path.join(self.base_dir, self._course_metadata_path('*'))
+        cpurse_pattern = os.path.join(self.base_dir, "*/summary.json")
         for json_path in glob.glob(cpurse_pattern):
             if os.path.isfile(json_path):
                 course_summary = CourseSummary.model_validate_json(read_str(json_path))
@@ -119,42 +105,76 @@ class ContextDataset:
 
         chunk_embedding_pattern = os.path.join(self.base_dir, 
                 f'chunks/*/*-*.json')
+        
+        #embeddings=embeddings,
+        #ids=ids,
+        #metadatas=metadatas
+
         chunk_dict = {}
         for path in glob.glob(chunk_embedding_pattern):
             filename = os.path.basename(path)
             dirname = os.path.dirname(path)
             chunk_hash = filename[:64]
             embedding_type = filename[65:].split('.')[0]
-            t = chunk_dict.get(chunk_hash)
-            if t is None:
-                t = []
-                chunk_dict[chunk_hash] = t
-            t.append(embedding_type)
-        
+
+            emb_data = chunk_dict.get(embedding_type)
+            if emb_data is None:
+                emb_data = {
+                    "ids":[], 
+                    "embeddings":[], 
+                    "metadatas":[] }
+                chunk_dict[embedding_type] = emb_data
+
+            emb_data["ids"].append(chunk_hash)
+            embeding = read_json(path)
+            emb_data["embeddings"].append(embeding)
+            metadata_path = os.path.join(dirname, f"{chunk_hash}.json")
+            metadata = read_json(metadata_path)
+            emb_data["metadatas"].append(metadata)
+
         index = {
             "courses": course_keys,
-            "chunks": chunk_dict
+            "emb_types": list(chunk_dict.keys())
         }
+
+
         index_path = os.path.join(self.base_dir, "index.json")
         write_str(index_path, json.dumps(index, indent=2))
+        for embedding_type, emb_data in chunk_dict.items():
+            emb_path = os.path.join(self.base_dir, f"emb-{embedding_type}.json.zst")
+            emb_str = json.dumps(emb_data, indent=2,
+                                    separators=(',', ': '))
+            print(embedding_type)
+            emb_str = re.sub(r'(?<=\d,)\s+|(?<=\d)\s+|(?<=\[)\s+(?=[\d-])', '', emb_str)
+            with zstd.open(emb_path, 'wt', encoding='utf-8') as f:
+                f.write(emb_str)
 
 
+class ContextDataset:
+    fs: FileSet
+    course_dict: dict[str, CourseSummary]
+    loaded_index: dict
 
-    # Dataset retrieval API
+    def __init__(self, base_url: str):
+        self.fs = FileSet.from_base_url(base_url)
+        self.course_dict = {}
+        self.loaded_index = self.fs.read_json("index.json")
+        for course_key in self.loaded_index["courses"]:
+            summary_str = self.fs.read_str(f"{course_key}/summary.json")
+            course_summary = CourseSummary.model_validate_json(summary_str)
+            self.course_dict[course_summary.course_key] = course_summary
 
     def get_embeddings_data(self, embedding_model, embedding_size) -> tuple[list[list[float]], list[str], list[dict]]:
         embedding_type = f"{embedding_model}-{embedding_size}"
-        embeddings=[]
-        ids=[]
-        metadatas=[]
-        for chunk_hash, t in self.loaded_index["chunks"].items():
-            if embedding_type in t:
-                path_prefix = f'chunks/{chunk_hash[:2]}/{chunk_hash}'
-                embeding = self.fs.read_json(f'{path_prefix}-{embedding_type}.json')
-                embeddings.append(embeding)
-                chunk_meta = self.fs.read_json(f'{path_prefix}.json')
-                metadatas.append(chunk_meta)
-                ids.append(chunk_hash)
+        emb_path = f"emb-{embedding_type}.json.zst"
+        b = self.fs.read_bytes(emb_path)
+        with zstd.open(io.BytesIO(b), 'rt', encoding="utf-8") as f:
+           emb_str = f.read()
+        b = None
+        emb_data = json.loads(emb_str)
+        embeddings= emb_data["embeddings"]
+        ids= emb_data["ids"]
+        metadatas= emb_data["metadatas"]
         return embeddings, ids, metadatas
     
     def get_summary_texts(self, course_key: str, activity_key:str) -> tuple[str,str]:

@@ -27,6 +27,10 @@ class FileSet(ABC):
         if str_value is None:
             return None
         return yaml.safe_load(str_value)
+    
+    @abstractmethod
+    def read_bytes(self, path: str) -> bytes | None:
+        pass
 
     @abstractmethod
     async def read_str_async(self, path: str) -> str | None:
@@ -44,6 +48,10 @@ class FileSet(ABC):
             return None
         return yaml.safe_load(str_value)
     
+    @abstractmethod
+    async def read_bytes_async(self, path: str) -> bytes | None:
+        pass
+
     @abstractmethod
     def subdir(self, path: str) -> 'FileSet':
         pass
@@ -92,11 +100,25 @@ class LocalFileSet(FileSet):
         with open(lpath, encoding="utf8") as f:
             return f.read()
         
+    def read_bytes(self, path: str) -> bytes | None:
+        lpath = self.local_path(path)
+        if not os.path.isfile(lpath):
+            return None
+        with open(lpath, 'rb') as f:
+            return f.read()
+        
     async def read_str_async(self, path: str) -> str | None:
         lpath = self.local_path(path)
         if not os.path.isfile(lpath):
             return None
         async with aiofiles.open(lpath, mode='r', encoding="utf8") as f:
+            return await f.read()
+        
+    async def read_bytes_async(self, path: str) -> bytes | None:
+        lpath = self.local_path(path)
+        if not os.path.isfile(lpath):
+            return None
+        async with aiofiles.open(lpath, mode='rb') as f:
             return await f.read()
 
     def fastapi_response(self, request: Request, path: str) -> Response:
@@ -113,14 +135,16 @@ class HttpFileSet(FileSet):
 
     base_url: str
 
-    _client: httpx.Client
+    # make single static client/async_client to handle shared connection pools
+    client = httpx.Client()
+    async_client = httpx.AsyncClient()
+
 
     def __init__(self, base_url: str):
         if base_url.endswith('/'):
             self.base_url = base_url[:-1]
         else:
             self.base_url = base_url
-        self._client = httpx.Client()
 
 
     def full_url(self, path: str) -> str:
@@ -128,21 +152,37 @@ class HttpFileSet(FileSet):
             return self.base_url
         return f"{self.base_url}/{clean_path(path)}"
 
-    def read_str(self, path: str) -> str:
+    def read_str(self, path: str) -> str | None:
         url = self.full_url(path)
-        response = self._client.get(url)
+        response = HttpFileSet.client.get(url)
         if response.status_code == 404:
             return None
+        response.raise_for_status()
         return response.text
-
-    async def read_str_async(self, path: str) -> str:
+    
+    def read_bytes(self, path: str) -> bytes | None:
         url = self.full_url(path)
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url)
-            if response.status_code == 404:
-                return None
-            response.raise_for_status()
-            return response.text
+        response = HttpFileSet.client.get(url)
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        return response.content
+
+    async def read_str_async(self, path: str) -> str | None:
+        url = self.full_url(path)
+        response = await HttpFileSet.async_client.get(url)
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        return response.text
+    
+    async def read_bytes_async(self, path: str) -> bytes | None:
+        url = self.full_url(path)
+        response = await HttpFileSet.async_client.get(url)
+        if response.status_code == 404:
+            return None
+        response.raise_for_status()
+        return response.content
 
     async def fastapi_response(self, path: str, request: Request = None) -> Response:
         forward_url = self.full_url(path)
@@ -154,28 +194,29 @@ class HttpFileSet(FileSet):
         # Create a dictionary of headers to forward based on the whitelist
         fw_headers = {key: value for key, value in request.headers.items() 
                       if key.lower() in headers_whitelist}
+        
+        fw_headers["connection"] = "keep-alive"
 
-        async with httpx.AsyncClient() as client:
-            # Forward the request and stream the response
-            response = await client.request(
-                method=request.method,
-                url=forward_url,
-                headers=fw_headers,
-                data=await request.body(),
-                stream=True,
-            )
+        # Forward the request and stream the response
+        response = await HttpFileSet.async_client.request(
+            method=request.method,
+            url=forward_url,
+            headers=fw_headers,
+            data=await request.body(),
+            stream=True,
+        )
 
-            response_headers = dict(response.headers)
-            response_headers.pop("connetion", None)
+        response_headers = dict(response.headers)
+        response_headers.pop("connetion", None)
 
-            # TODO: Consider handling the case where the response is a redirect
+        # TODO: Consider handling the case where the response is a redirect
 
-            # Stream the response back to the client
-            return Response(
-                content=response.aiter_raw(),
-                status_code=response.status_code,
-                headers=dict(response_headers),
-            )
+        # Stream the response back to the client
+        return Response(
+            content=response.aiter_raw(),
+            status_code=response.status_code,
+            headers=dict(response_headers),
+        )
         
     def subdir(self, path: str) -> 'HttpFileSet':
         return HttpFileSet(self.full_url(path))

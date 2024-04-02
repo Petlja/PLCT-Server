@@ -41,7 +41,7 @@ CHROMADB_COLLECTION_NAME = f"{EMBEDING_MODEL}-{EMBEDING_SIZE}"
 class AiEngine:
     def __init__(self, base_url: str):
         logger.debug(f"ai_context_dir: {base_url}")
-        self.ctx_data = ContextDataset(base_url, load=True)
+        self.ctx_data = ContextDataset(base_url)
         self.ch_cli = chromadb.Client()
         #self.course_summaries: dict[str,CourseSummary] = {}
         self._load_embeddings()
@@ -52,13 +52,16 @@ class AiEngine:
             name=f"{CHROMADB_COLLECTION_NAME}",
             metadata={"hnsw:space": "ip"})
 
+        logger.debug(f"Loading embeddings {EMBEDING_MODEL}-{EMBEDING_SIZE}")
         embeddings, ids, metadatas = self.ctx_data.get_embeddings_data(EMBEDING_MODEL, EMBEDING_SIZE)
 
+        logger.debug(f"Indexing embeddings {EMBEDING_MODEL}-{EMBEDING_SIZE}")
         collection.add(
             embeddings=embeddings,
             ids=ids,
             metadatas=metadatas
         )
+        logger.debug(f"Embeddings loaded and indexed {EMBEDING_MODEL}-{EMBEDING_SIZE}")
 
     async def preprocess_query(self, history: list[tuple[str,str]], qyery: str, course_key: str, activity_key: str) -> str:
         course_summary, lesson_summary = self.ctx_data.get_summary_texts(
