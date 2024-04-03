@@ -20,7 +20,7 @@ preprocess_system_message_template_x1 = (
 )
 
 preprocess_user_message_template = (
-    "Help me to elaborate the request in more detailes:\n\n{user_input}")
+    "Help me to elaborate the folowing request in more detail:\n\n{user_input}")
 
 system_message_template = (
     #"Keep in the context of learning to code in Python.\n\n"

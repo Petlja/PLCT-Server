@@ -3,6 +3,8 @@ import logging
 import os
 import yaml
 
+from .fileset import FileSet
+
 from ..ioutils import read_json, read_yaml
 
 logger = logging.getLogger(__name__)
@@ -22,64 +24,75 @@ class TocItem:
 class CourseContent:
     course_key: str
     root_toc_item: TocItem
-    static_website_root: str
+    html_fs: FileSet
 
     @property
     def title(self) -> str:
         return self.root_toc_item.title
 
-    def __init__(self, course_key: str, root_toc_item: TocItem, static_website_root: str):
+    def __init__(self, course_key: str, root_toc_item: TocItem, html_fs: FileSet):
         self.course_key = course_key
         self.root_toc_item = root_toc_item
-        self.static_website_root = static_website_root
+        self.html_fs = html_fs
 
 class  CourseLoadError(Exception):
     pass
 
-def load_course(dir: str) -> CourseContent:
-    logger.debug(f"load_course: {dir}")
-    plct_config_path = os.path.join(dir, "plct_config.yaml")
-    if os.path.isfile(plct_config_path):
-        config = read_yaml(plct_config_path)
+def load_course(course_fs: FileSet) -> CourseContent:
+    logger.debug(f"load_course: {course_fs}")
+    config = course_fs.read_yaml("plct_config.yaml")
+    if config != None:
         output_dir = config.get("output_dir")
         if output_dir is None:
-            raise CourseLoadError(f"Configuration file {plct_config_path} does not contain output_dir.")
+            raise CourseLoadError(f"Configuration file does not contain output_dir.")
         builder = config.get("builder")
         if builder is None:
-            raise CourseLoadError(f"Configuration file {plct_config_path} does not contain builder.")   
+            raise CourseLoadError(f"Configuration file does not contain builder.")   
         if builder == "plct_builder":
-            static_website_root = os.path.join(dir, output_dir, builder, "static_website")
-            return course_from_plct_build(static_website_root)
+            html_fs = course_fs.subdir(f"{output_dir}/{builder}/static_website")
+            return course_from_plct_build(html_fs)
         else:
-            raise CourseLoadError(f"Builder {builder} not supported.")
-    elif os.path.isdir(build_dir := os.path.join(dir, '_build')):
-        return course_from_index_yaml(build_dir)
+            cc = CourseLoadError(f"Builder {builder} not supported.")
+            if cc is not None:
+                return cc
+            raise CourseLoadError(f"Course configuration file course.json does not exist in {html_fs}.")
     else:
-        raise CourseLoadError(f"Directory {dir} is not a PLCT project.")
+        html_fs = course_fs.subdir("_build")
+        cc = course_from_index_yaml(html_fs)
+        if cc is not None:
+            return cc
+        cc = course_from_index_yaml(course_fs)
+        if cc is not None:
+            return cc
+        cc = course_from_plct_build(course_fs) 
+        if cc is not None:
+            return cc
+        raise CourseLoadError(f"Can't find course project in {course_fs}.")
 
-def course_from_plct_build(static_website_root: str) -> CourseContent:
-    course_config_path =  os.path.join(static_website_root, "course.json")
-    if not os.path.isfile(course_config_path):
-        raise CourseLoadError(f"Course configuration file {course_config_path} does not exist.")
-    course_content = read_json(course_config_path)
-    if "toc_tree" not in course_content:
-        raise ValueError
-    root_toc_dict = course_content["toc_tree"]
+
+def course_from_plct_build(html_fs: FileSet) -> CourseContent:
+    course_json = html_fs.read_json("course.json")
+    if course_json == None:
+        return None
+    #print(course_json)
+    if "toc_tree" not in course_json:
+        raise CourseLoadError(f"Course configuration file does not contain toc_tree.")
+    root_toc_dict = course_json["toc_tree"]
     if "title" not in root_toc_dict:
-        raise CourseLoadError(f"Course configuration file {course_config_path} does not contain toc_tree.title.")
+        raise CourseLoadError(f"Course configuration file does not contain toc_tree.title.")
     if "meta_data" not in root_toc_dict:
-        raise CourseLoadError(f"Course configuration file {course_config_path} does not contain tpc_tree.meta_data.")
+        raise CourseLoadError(f"Course configuration file does not contain tpc_tree.meta_data.")
     if "alias" not in root_toc_dict["meta_data"]:
-        raise CourseLoadError(f"Course configuration file {course_config_path} does not contain toc_tree.meta_data.alias.")
+        raise CourseLoadError(f"Course configuration file does not contain toc_tree.meta_data.alias.")
     course_key = root_toc_dict["meta_data"]["alias"]
 
     def load_toc_item(toc_dict: dict[str, str], level: int) -> TocItem:
         key = toc_dict.get("guid") or toc_dict.get("docname")
         if key is None:
-            raise CourseLoadError(f"Course configuration file {course_config_path} contains a toc item without guid or docname.")
+            raise CourseLoadError(f"Course configuration file contains a toc item without guid or docname.")
         title = toc_dict.get("title")
         if title is None:
-            raise CourseLoadError(f"Course configuration file {course_config_path} contains a toc item without title.")
+            raise CourseLoadError(f"Course configuration file contains a toc item without title.")
         item = TocItem(level=level, key=key, title=title, child_items={})
         if "children" in toc_dict:
             for child_toc_dict in toc_dict["children"]:
@@ -88,24 +101,25 @@ def course_from_plct_build(static_website_root: str) -> CourseContent:
         return item
     
     root_item = load_toc_item(root_toc_dict, 0)
-    course_content = CourseContent(course_key=course_key, root_toc_item=root_item, 
-                                    static_website_root=os.path.dirname(course_config_path))
-    return course_content
+    course_json = CourseContent(course_key=course_key, root_toc_item=root_item, 
+                                    html_fs=html_fs)
+    return course_json
 
-def course_from_index_yaml(build_dir) -> None:
-        petljadoc_config_path = os.path.join(build_dir, "index.yaml")
-        petljadoc_config = read_yaml(petljadoc_config_path)
+def course_from_index_yaml(html_fs: FileSet) -> None:
+        petljadoc_config = html_fs.read_yaml("index.yaml")
+        if petljadoc_config is None:
+            return None
         if "title" not in petljadoc_config:
-            raise CourseLoadError(f"Course configuration file {petljadoc_config_path} does not contain title.")
+            raise CourseLoadError(f"Course configuration file does not contain title.")
         if "courseId" not in petljadoc_config:
-            raise CourseLoadError(f"Course configuration file {petljadoc_config_path} does not contain courseId.")
+            raise CourseLoadError(f"Course configuration file does not contain courseId.")
         title = petljadoc_config["title"]
         course_key = petljadoc_config["courseId"]
         root_toc_item = TocItem(level=0, key="index", title=title, child_items={})
 
         lessons = petljadoc_config.get("lessons")
         if lessons is None:
-            raise CourseLoadError(f"Course configuration file {petljadoc_config_path} does not contain lessons.")
+            raise CourseLoadError(f"Course configuration file does not contain lessons.")
         for lesson in lessons:
             lesson_title = lesson.get("title")
             lesson_key = lesson.get("guid")
@@ -124,7 +138,7 @@ def course_from_index_yaml(build_dir) -> None:
                 activity_item = TocItem(level=2, key=activity_key, title=activity_title, child_items={})
                 lesson_item.child_items[activity_key] = activity_item
         course_content = CourseContent(course_key=course_key, root_toc_item=root_toc_item,
-                                        static_website_root=build_dir)
+                                        html_fs=html_fs)
         return course_content
 
 

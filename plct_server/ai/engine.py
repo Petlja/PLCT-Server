@@ -6,6 +6,8 @@ from typing import AsyncIterator
 import chromadb
 from openai import AsyncOpenAI, OpenAI
 from pydantic import BaseModel
+
+from plct_server.content.fileset import FileSet
 from .context_dataset import ContextDataset
 from . import OPENAI_API_KEY
 
@@ -18,11 +20,13 @@ logger = logging.getLogger(__name__)
 
 ai_engine: "AiEngine" = None
 
-def init(ai_context_dir: str):
+def init(base_url: str):
     global ai_engine
-    if ai_engine is not None:
+    if ai_engine is None:
+        ai_engine = AiEngine(base_url)
+    else:
         raise ValueError(f"{__name__} already initialized")
-    ai_engine = AiEngine(ai_context_dir)
+    
 
 def get_ai_engine() -> "AiEngine":
     global ai_engine
@@ -30,14 +34,14 @@ def get_ai_engine() -> "AiEngine":
         raise ValueError(f"{__name__} not initialized, call {__name__}.init first")
     return ai_engine
 
-EMBEDING_SIZE = 256
+EMBEDING_SIZE = 1536
 EMBEDING_MODEL = "text-embedding-3-small"
 CHROMADB_COLLECTION_NAME = f"{EMBEDING_MODEL}-{EMBEDING_SIZE}"
 
 class AiEngine:
-    def __init__(self, ai_context_dir: str):
-        logger.debug(f"ai_context_dir: {ai_context_dir}")
-        self.ctx_data = ContextDataset(ai_context_dir, load=True)
+    def __init__(self, base_url: str):
+        logger.debug(f"ai_context_dir: {base_url}")
+        self.ctx_data = ContextDataset(base_url)
         self.ch_cli = chromadb.Client()
         #self.course_summaries: dict[str,CourseSummary] = {}
         self._load_embeddings()
@@ -48,27 +52,35 @@ class AiEngine:
             name=f"{CHROMADB_COLLECTION_NAME}",
             metadata={"hnsw:space": "ip"})
 
+        logger.debug(f"Loading embeddings {EMBEDING_MODEL}-{EMBEDING_SIZE}")
         embeddings, ids, metadatas = self.ctx_data.get_embeddings_data(EMBEDING_MODEL, EMBEDING_SIZE)
 
+        logger.debug(f"Indexing embeddings {EMBEDING_MODEL}-{EMBEDING_SIZE}")
         collection.add(
             embeddings=embeddings,
             ids=ids,
             metadatas=metadatas
         )
+        logger.debug(f"Embeddings loaded and indexed {EMBEDING_MODEL}-{EMBEDING_SIZE}")
 
-    async def preprocess_query(self, qyery: str, course_key: str, activity_key: str) -> str:
+    async def preprocess_query(self, history: list[tuple[str,str]], qyery: str, course_key: str, activity_key: str) -> str:
         course_summary, lesson_summary = self.ctx_data.get_summary_texts(
             course_key, activity_key)
+        
         system_message = preprocess_system_message_template.format(
             course_summary=course_summary,
             lesson_summary=lesson_summary
         )
 
-        preprocessed_query = preprocess_user_message_template.format(
+        preprocessed_user_message = preprocess_user_message_template.format(
             user_input=qyery
         )
-        messages=[{"role": "system", "content": system_message},
-              {"role": "user", "content": preprocessed_query}]
+
+        messages=[{"role": "system", "content": system_message}]
+        for item in history:
+            messages.append({"role": "user", "content": item[0]})
+            messages.append({"role": "assistant", "content": item[1]})
+        messages.append({"role": "user", "content": preprocessed_user_message})
     
         client = AsyncOpenAI(api_key = OPENAI_API_KEY)
 
@@ -80,12 +92,12 @@ class AiEngine:
             temperature=0
         )
 
-        preprocessed_query = qyery + '\n' + completion.choices[0].message.content
-        logger.debug(f"preprocessed_query: {preprocessed_query}")
-        return preprocessed_query
+        preprocessed_user_message = qyery + '\n' + completion.choices[0].message.content
+        logger.debug(f"preprocessed_query: {preprocessed_user_message}")
+        return preprocessed_user_message
     
-    async def make_system_message(self, qyery: str, course_key: str, activity_key: str) -> str:
-        preprocessed_query = await self.preprocess_query(qyery, course_key, activity_key)
+    async def make_system_message(self, history: list[tuple[str,str]], qyery: str, course_key: str, activity_key: str) -> str:
+        preprocessed_query = await self.preprocess_query(history, qyery, course_key, activity_key)
         
         course_summary, lesson_summary = self.ctx_data.get_summary_texts(course_key, activity_key)
 
@@ -131,10 +143,9 @@ class AiEngine:
     async def generate_answer(self,*, history: list[tuple[str,str]], query: str,
                             course_key: str, activity_key: str) -> AsyncIterator[int]:
         
-        system_message = await self.make_system_message(query, course_key, activity_key)
+        system_message = await self.make_system_message(history, query, course_key, activity_key)
         
         messages=[{"role": "system", "content": system_message}]
-
         for item in history:
             messages.append({"role": "user", "content": item[0]})
             messages.append({"role": "assistant", "content": item[1]})

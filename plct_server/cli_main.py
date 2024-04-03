@@ -2,7 +2,7 @@ import uvicorn
 import click
 from logging import getLogger
 from fastapi import FastAPI
-from .endpoints import router
+from .endpoints import get_ui_router
 from .content import server
 
 logger = getLogger(__name__)
@@ -24,7 +24,7 @@ def serve(folders: tuple[str], host: str, port: int, verbose:bool, ai_context:st
         course_dirs = folders, verbose = verbose, 
         ai_context_dir = ai_context)
     app = FastAPI()
-    app.include_router(router)
+    app.include_router(get_ui_router())
 
     uvicorn.run(app, host=host, port=port) 
 
