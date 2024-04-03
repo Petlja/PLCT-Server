@@ -26,7 +26,7 @@ class ConfigOptions(BaseSettings):
     """Options from the configuration file and/or CLI attributes."""
     model_config = SettingsConfigDict(env_prefix='plct_')
 
-    content_url: str = None
+    content_url: str | None = None
     course_paths: Sequence[str] = []
 
     @validator('course_paths', pre=True)
@@ -38,9 +38,9 @@ class ConfigOptions(BaseSettings):
             return l
         return v
     
-    ai_ctx_url: str = None
-    verbose: bool = None
-    api_key: str = None
+    ai_ctx_url: str | None = None
+    verbose: bool | None = None
+    api_key: str | None = None
 
 class ServerContent:
 
@@ -85,8 +85,8 @@ def get_server_content() -> ServerContent:
         raise ValueError("Content configuration not initialized.")
     return _server_content
 
-def configure(*, course_dirs: tuple[str] = None, verbose: bool = None,
-              ai_context_dir: str = None) -> None:
+def configure(*, course_urls: tuple[str] = None, verbose: bool = None,
+              ai_ctx_url: str = None) -> None:
 
     config_file = os.environ.get("PLCT_SERVER_CONFIG_FILE")
     conf: ConfigOptions = None
@@ -130,10 +130,10 @@ def configure(*, course_dirs: tuple[str] = None, verbose: bool = None,
         logger.info("The environvent variable PLCT_SERVER_CONFIG_FILE is not set.")
     if conf is None:
         conf = ConfigOptions()
-    if course_dirs:
-        conf.course_urls = course_dirs
-    if ai_context_dir:
-        conf.ai_ctx_url = ai_context_dir
+    if course_urls:
+        conf.course_urls = course_urls
+    if ai_ctx_url:
+        conf.ai_ctx_url = ai_ctx_url
     if verbose is not None:
         conf.verbose = verbose
     if conf.verbose:

@@ -21,8 +21,8 @@ def serve(folders: tuple[str], host: str, port: int, verbose:bool, ai_context:st
     logger.info(f"folders: {folders}, host: {host}, port: {port}")
     
     server.configure(
-        course_dirs = folders, verbose = verbose, 
-        ai_context_dir = ai_context)
+        course_urls = folders, verbose = verbose, 
+        ai_ctx_url = ai_context)
     app = FastAPI()
     app.include_router(get_ui_router())
 
