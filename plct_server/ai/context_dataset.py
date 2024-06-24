@@ -105,10 +105,6 @@ class ContextDatasetBuilder:
 
         chunk_embedding_pattern = os.path.join(self.base_dir, 
                 f'chunks/*/*-*.json')
-        
-        #embeddings=embeddings,
-        #ids=ids,
-        #metadatas=metadatas
 
         chunk_dict = {}
         for path in glob.glob(chunk_embedding_pattern):
@@ -137,14 +133,13 @@ class ContextDatasetBuilder:
             "emb_types": list(chunk_dict.keys())
         }
 
-
         index_path = os.path.join(self.base_dir, "index.json")
         write_str(index_path, json.dumps(index, indent=2))
         for embedding_type, emb_data in chunk_dict.items():
             emb_path = os.path.join(self.base_dir, f"emb-{embedding_type}.json.zst")
             emb_str = json.dumps(emb_data, indent=2,
                                     separators=(',', ': '))
-            print(embedding_type)
+            logger.info(embedding_type)
             emb_str = re.sub(r'(?<=\d,)\s+|(?<=\d)\s+|(?<=\[)\s+(?=[\d-])', '', emb_str)
             with zstd.open(emb_path, 'wt', encoding='utf-8') as f:
                 f.write(emb_str)

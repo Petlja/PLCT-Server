@@ -29,7 +29,7 @@ system_message_template = (
     "When appropriate, provide example of code with explanation.\n\n"
     "If you are not sure, answer that you are not sure and that you can't help.\n\n"
     #"Never answer outside of the Python context.\n\n"
-    "Allways answer in the language and script of the question.\n\n"
+    "Answer in the Serbian language by default, using the same script as in the question (Latin or Cyrillic). When the question is in English, answer in English.\n\n"
 )
 
 system_message_summay_template = (
