@@ -91,7 +91,7 @@ Through the front-end URL, you have full access to the PLCT Server because the f
 
 By using both the dev-mode server and the front-end server, you can achieve live reload for both the front-end and back-end changes.
 
-# Using AI context dataset
+## Using AI context dataset
 
 Yo can use `--ai-context` CLI or `ai_context_dir` config file option to specify the directory of a context dataset.
 
