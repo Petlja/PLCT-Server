@@ -55,12 +55,23 @@ class AiEngine:
         logger.debug(f"Loading embeddings {EMBEDING_MODEL}-{EMBEDING_SIZE}")
         embeddings, ids, metadatas = self.ctx_data.get_embeddings_data(EMBEDING_MODEL, EMBEDING_SIZE)
 
-        logger.debug(f"Indexing embeddings {EMBEDING_MODEL}-{EMBEDING_SIZE}")
-        collection.add(
-            embeddings=embeddings,
-            ids=ids,
-            metadatas=metadatas
-        )
+        max_batch_size = self.ch_cli.max_batch_size
+        total_size = len(embeddings)
+        
+        for start_idx in range(0, total_size, max_batch_size):
+            end_idx = min(start_idx + max_batch_size, total_size)
+            
+            batch_embeddings = embeddings[start_idx:end_idx]
+            batch_ids = ids[start_idx:end_idx]
+            batch_metadatas = metadatas[start_idx:end_idx]
+            
+            logger.debug(f"Indexing embeddings {EMBEDING_MODEL}-{EMBEDING_SIZE} for batch {start_idx} to {end_idx}")
+            collection.add(
+                embeddings=batch_embeddings,
+                ids=batch_ids,
+                metadatas=batch_metadatas
+            )
+
         logger.debug(f"Embeddings loaded and indexed {EMBEDING_MODEL}-{EMBEDING_SIZE}")
 
     async def preprocess_query(self, history: list[tuple[str,str]], qyery: str, course_key: str, activity_key: str) -> str:
