@@ -30,6 +30,7 @@ aiofiles = "^23.2.1"
 pydantic-settings = "^2.2.1"
 zstandard = "^0.22.0"
 numpy = "^1.26.4"
+markdown-it-py = "^3.0.0"
 
 [tool.poetry.group.dev.dependencies]
 
@@ -39,3 +40,4 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
 plct-serve = "plct_server.cli_main:cli"
+plct-batch-review = "plct_server.cli_main:batch_review_cli"

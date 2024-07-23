@@ -5,3 +5,4 @@ __pycache__/
 dist/
 build/
 dev-server.json
+/plct_server/eval/results

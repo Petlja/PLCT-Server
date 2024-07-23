@@ -12,5 +12,6 @@ if not logger.hasHandlers():
     logger.addHandler(handler)
 
 def register_extension_command(cli_group):
-    from .cli_main import serve
+    from .cli_main import serve, batch_review
     cli_group.add_command(serve)
+    cli_group.add_command(batch_review)

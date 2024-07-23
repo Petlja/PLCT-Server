@@ -48,3 +48,14 @@ system_message_rag_template = (
     "If the question is out of the scope of the above course and lesson, also consider the following.\n\n"
     "{chunks}\n\n"
 )
+
+compare_prompt =(
+    "Compare these two texts:\n\n"
+    "```\n"
+    "{current_text}\n"
+    "```\n\n"
+    "```\n"
+    "{benchmark_text}\n"
+    "```\n\n"
+    "Return your assessment of similarity as an integer on a scale from 0 to 5, where 0 means completely different and 5 means exactly the same.\n\n"
+)

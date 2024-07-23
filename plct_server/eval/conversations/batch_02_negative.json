@@ -1,0 +1,21 @@
+[
+    {
+        "history": [],
+        "query": "Напиши ми наредбе које би исцртале срце у прозору ширине 300 и висине 300.",
+        "course_key": "kurs-sedmi-pygame",
+        "activity_key": "4932bc09-ca0d-44be-836d-c9e9fcca413a",
+        "response": "",
+        "benchmark_response": "Да бисмо исцртали срце у Pygame, можемо користити комбинацију квадрата и два круга. Претпоставимо да је центар прозора у тачки (150, 150) и да ћемо користити те димензије за позиционирање наших облика.\n\nЕво како би изгледао комплетан код за цртање срца:\n\n```python\nimport pygame as pg\n\n# Иницијализација Pygame\npg.init()\n\n# Постављање димензија прозора\nprozor = pg.display.set_mode((300, 300))\n\n# Боја позадине\nprozor.fill(pg.Color(\"white\"))\n\n# Боја срца\nboja_srca = pg.Color(\"red\")\n\n# Координате и димензије квадрата\nkvadrat_teme = [(125, 150), (175, 150), (175, 200), (125, 200)]\n\n# Цртање квадрата\npg.draw.polygon(prozor, boja_srca, kvadrat_teme)\n\n# Полупречник кругова\nr = 25\n\n# Цртање левог круга\npg.draw.circle(prozor, boja_srca, (150 - r, 150), r)\n\n# Цртање десног круга\npg.draw.circle(prozor, boja_srca, (150 + r, 150), r)\n\n# Освежавање приказа прозора\npg.display.flip()\n\n# Чекање да корисник затвори прозор\nrunning = True\nwhile running:\n    for event in pg.event.get():\n        if event.type == pg.QUIT:\n            running = False\n\npg.quit()\n```\n\nУ овом коду:\n- Квадрат је центриран око тачке (150, 175) и има ширину и висину од 50 пиксела.\n- Два круга су позиционирана тако да се њихови горњи делови додирују са горњом страном квадрата, стварајући облик срца.\n- Полупречник кругова је 25 пиксела, што је приближно половина висине квадрата.\n\nОвај код ће отворити прозор димензија 300x300 пиксела и исцртати срце у центру.",
+        "feedback" : 0
+    },    
+	{
+		"history": [],
+		"query": "O čemu je ovde reč?",
+		"course_key": "specit4_ai",
+		"activity_key": "ea163cb2-cae4-41f6-8d0e-58d7df54479b",
+		"response": "",
+		"benchmark_response": "Ovde je reč o lekciji \"Савремена вештачка интелигенција\" koja se fokusira na programerske tehnike i koncepte jezika i API-ja koji su pokriveni lekcijom. Takođe se obrađuju i određeni koncepti i tehnike vezane za veštačku inteligenciju, kao što su GPU računanje, FLOPS, informacioni sistemi i cloud computing. Cilj lekcije je da studenti razumeju koncept i primene veštačke inteligencije, prepoznaju važnost podataka u razvoju veštačke inteligencije, razumeju ulogu hardvera u obradi veštačke inteligencije i upoznaju se sa jedinicama memorije i njihovim veličinama.",
+        "feedback" : 0
+	}
+]
+

@@ -14,7 +14,7 @@ from . import OPENAI_API_KEY
 from .prompt_templates import ( 
     preprocess_system_message_template, system_message_template, 
     system_message_summay_template, system_message_rag_template,
-    preprocess_user_message_template)
+    preprocess_user_message_template, compare_prompt)
 
 logger = logging.getLogger(__name__)
 
@@ -178,3 +178,27 @@ class AiEngine:
 
         return answer_generator()
 
+    async def compare_strings(self, response_text: str, benchmark_text: str) -> int:
+        client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+
+        messages = [
+            {"role": "system", "content": "You are an AI that evaluates the similarity of two texts. Answer with just a number no explanation needed"},
+            {"role": "user", "content": compare_prompt.format(current_text=response_text, benchmark_text=benchmark_text)}
+        ]
+
+        completion = await client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=messages,
+            stream=False,
+            max_tokens=50,
+            temperature=0
+        )
+
+        response = completion.choices[0].message.content.strip()
+
+        try:
+            similarity_score = int(response)
+        except ValueError:
+            print(f"Invalid response: {response}")
+            similarity_score = -1 
+        return similarity_score
