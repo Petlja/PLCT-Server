@@ -41,7 +41,7 @@ def batch_review(ai_context:str, batch_name:str, set_benchmark: bool, verbose, c
     
     server.configure(
         ai_ctx_url = ai_context,
-        verbose=  verbose)
+        verbose =  verbose)
     
     import platform
     if platform.system()=='Windows':
@@ -51,11 +51,9 @@ def batch_review(ai_context:str, batch_name:str, set_benchmark: bool, verbose, c
     logger.info("Starting batch review of conversations")
     asyncio.run(batch_prompt_conversations(batch_name=batch_name, set_benchmark=set_benchmark))
 
-    logger.info("Generating HTML report")
-    if compare_with_ai:
+    if not set_benchmark:
+        logger.info("Generating HTML report")
         asyncio.run(generate_html_report(batch_name, compare_with_ai))
-    else:
-        generate_html_report(batch_name, compare_with_ai)
 
 
 

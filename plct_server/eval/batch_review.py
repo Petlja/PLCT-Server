@@ -6,6 +6,7 @@ from typing import Optional
 from markdown_it import MarkdownIt
 from pydantic import BaseModel
 from ..ai.engine import AiEngine, get_ai_engine
+from ..ioutils import read_json, write_json, read_str, write_str
 
 CONVERSATION_DIR = "plct_server/eval/conversations"
 RESULT_DIR = "plct_server/eval/results"
@@ -34,7 +35,7 @@ class Conversation(BaseModel):
         self.response = convert_to_html(self.response)
         self.benchmark_response = convert_to_html(self.benchmark_response)
 
-async def run_test_case(ai_engine: AiEngine, test_case: Conversation):
+async def run_test_case(ai_engine: AiEngine, test_case: Conversation) -> str:
     answer_generator = await ai_engine.generate_answer(
         history=test_case.history,
         query=test_case.query,
@@ -50,20 +51,24 @@ async def run_test_case(ai_engine: AiEngine, test_case: Conversation):
 
 def load_conversations(directory: str) -> dict[str, list[Conversation]]:
     conversations_dict = {}
-    for test_case_file in os.listdir(directory):
-        if not test_case_file.endswith(".json"):
+    for file in os.listdir(directory):
+        if not file.endswith(".json"):
             continue
-        with open(os.path.join(directory, test_case_file), encoding="utf-8") as f:
-            test_case_file_name, _ = os.path.splitext(test_case_file)
-            conversations_json = json.load(f)
-            conversations = [Conversation.model_validate(conversation) for conversation in conversations_json]
-            conversations_dict[test_case_file_name] = conversations
+
+        file_path = os.path.join(directory, file)
+        file_name, _ = os.path.splitext(file)
+        conversations_json = read_json(file_path)
+        conversations = [Conversation.model_validate(conversation) for conversation in conversations_json]
+        conversations_dict[file_name] = conversations
+          
     return conversations_dict
 
-async def process_conversations(ai_engine: AiEngine, output_dir: str, set_benchmark: bool) -> None:
+async def process_conversations(output_dir: str, set_benchmark: bool) -> None:
+    ai_engine = get_ai_engine()
     conversations_dict = load_conversations(CONVERSATION_DIR)
-    for test_case_file_name, conversations in conversations_dict.items():
-        logger.info(f"Getting answers for {os.path.basename(output_dir)} {test_case_file_name}")
+
+    for file_name, conversations in conversations_dict.items():
+        logger.info(f"Getting answers for {os.path.basename(output_dir)} {file_name}")
         for conversation in conversations:
             response = await run_test_case(ai_engine, conversation)
             if set_benchmark:
@@ -71,15 +76,15 @@ async def process_conversations(ai_engine: AiEngine, output_dir: str, set_benchm
             else:
                 conversation.response = response
 
-        result_file = os.path.join(output_dir, f"results_{test_case_file_name}.json")
-        with open(result_file, "w") as f:
-            json.dump([conversation.model_dump() for conversation in conversations], f, indent=4)
+        result_file_suffix = "" if set_benchmark else "results_"
+        result_file = os.path.join(output_dir, f"{result_file_suffix}{file_name}.json")
+        write_json(result_file, [conv.model_dump() for conv in conversations])
 
 async def batch_prompt_conversations(batch_name: str, set_benchmark: bool) -> None:
-    ai_engine = get_ai_engine()
-    output_dir = os.path.join(RESULT_DIR, batch_name)
+    output_dir = CONVERSATION_DIR if set_benchmark else os.path.join(RESULT_DIR, batch_name)
     os.makedirs(output_dir, exist_ok=True)
-    await process_conversations(ai_engine, output_dir, set_benchmark)
+
+    await process_conversations(output_dir, set_benchmark)
 
 async def generate_html_report(batch_name: str, use_ai_to_compare: bool) -> None:
     conversation_path = os.path.join(RESULT_DIR, batch_name)
@@ -90,19 +95,17 @@ async def generate_html_report(batch_name: str, use_ai_to_compare: bool) -> None
     for conversation in conversations:
         conversation.transform_markdown()
         if use_ai_to_compare:
-            logger.info(f"Getting AI assessment of similarity")
-            conversation.ai_assessment = await get_ai_assessment(conversation.response, conversation.benchmark_response)
+            conversation.ai_assessment = await get_ai_assessment(
+                conversation.response, 
+                conversation.benchmark_response
+                )
 
-    with open(COMPARATION_TEMPLATE, 'r', encoding='utf-8') as file:
-        template_content = file.read()
-    
+    template_content = read_str(COMPARATION_TEMPLATE)
     template = jinja2.Template(template_content)
-    
     html_content = template.render(conversations=conversations)
 
     report_path = os.path.join(RESULT_DIR, batch_name, 'report.html')
-    with open(report_path, 'w', encoding='utf-8') as file:
-        file.write(html_content)
+    write_str(report_path, html_content)
 
 
 async def get_ai_assessment(response: str, benchmark_response: str) -> int:
