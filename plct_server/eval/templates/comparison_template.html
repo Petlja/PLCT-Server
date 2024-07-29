@@ -90,6 +90,11 @@
             background-color: rgba(0, 0, 0, 0.5);
             padding: 2px 5px;
             border-radius: 3px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .response:hover .ai-assessment {
+            opacity: 1;
         }
 
         .benchmark {
@@ -107,6 +112,11 @@
             background-color: rgba(0, 0, 0, 0.5);
             padding: 2px 5px;
             border-radius: 3px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .benchmark:hover::after {
+            opacity: 1;
         }
         .feedback-positive::before {
             content: "Positive Feedback";
@@ -118,6 +128,8 @@
             background-color: rgba(0, 0, 0, 0.5);
             padding: 2px 5px;
             border-radius: 3px;
+            opacity: 0;
+            transition: opacity 0.3s;
         }
         .feedback-negative::before {
             content: "Negative Feedback";
@@ -129,6 +141,8 @@
             background-color: rgba(0, 0, 0, 0.5);
             padding: 2px 5px;
             border-radius: 3px;
+            opacity: 0;
+            transition: opacity 0.3s;
         }
         .feedback::before {
             content: attr(data-feedback);
@@ -140,6 +154,11 @@
             background-color: rgba(0, 0, 0, 0.5);
             padding: 2px 5px;
             border-radius: 3px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .benchmark:hover::before {
+            opacity: 1;
         }
         .navigation-balls {
             display: flex;
