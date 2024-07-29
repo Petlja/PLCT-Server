@@ -186,6 +186,8 @@
         {% for conversation in conversations %}
         <div class="chat-container" id="conversation-{{ conversation_index }}">
             <div class="history">
+                <div class="chat-message left">Course key: {{conversation.course_key}}
+Activity key: {{conversation.activity_key}}</div>
                 {% for history_item in conversation.history %}
                 <div class="chat-message right">{{ history_item[0] }}</div>
                 <div class="chat-message left">{{ history_item[1] }}</div>
