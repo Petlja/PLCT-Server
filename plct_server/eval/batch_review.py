@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from ..ai.engine import AiEngine, get_ai_engine
 from ..ioutils import read_json, write_json, read_str, write_str
 
-CONVERSATION_DIR = "plct_server/eval/conversations"
+CONVERSATION_DIR = "plct_server/eval/conversations/default"
 RESULT_DIR = "plct_server/eval/results"
 COMPARATION_TEMPLATE = "plct_server/eval/templates/comparison_template.html"
 
@@ -63,9 +63,9 @@ def load_conversations(directory: str) -> dict[str, list[Conversation]]:
           
     return conversations_dict
 
-async def process_conversations(output_dir: str, set_benchmark: bool) -> None:
+async def process_conversations(conversation_dir: str, output_dir: str, set_benchmark: bool) -> None:
     ai_engine = get_ai_engine()
-    conversations_dict = load_conversations(CONVERSATION_DIR)
+    conversations_dict = load_conversations(conversation_dir)
 
     for file_name, conversations in conversations_dict.items():
         logger.info(f"Getting answers for {os.path.basename(output_dir)} {file_name}")
@@ -80,11 +80,11 @@ async def process_conversations(output_dir: str, set_benchmark: bool) -> None:
         result_file = os.path.join(output_dir, f"{result_file_suffix}{file_name}.json")
         write_json(result_file, [conv.model_dump() for conv in conversations])
 
-async def batch_prompt_conversations(batch_name: str, set_benchmark: bool) -> None:
+async def batch_prompt_conversations(conversation_dir: str, batch_name: str, set_benchmark: bool) -> None:
     output_dir = CONVERSATION_DIR if set_benchmark else os.path.join(RESULT_DIR, batch_name)
     os.makedirs(output_dir, exist_ok=True)
 
-    await process_conversations(output_dir, set_benchmark)
+    await process_conversations(conversation_dir, output_dir, set_benchmark)
 
 async def generate_html_report(batch_name: str, use_ai_to_compare: bool) -> None:
     conversation_path = os.path.join(RESULT_DIR, batch_name)

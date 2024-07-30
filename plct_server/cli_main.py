@@ -4,7 +4,7 @@ import asyncio
 from logging import getLogger
 from fastapi import FastAPI
 from uuid import uuid4
-from .eval.batch_review import batch_prompt_conversations, generate_html_report
+from .eval.batch_review import batch_prompt_conversations, generate_html_report, CONVERSATION_DIR
 from .endpoints import get_ui_router
 from .content import server
 
@@ -37,7 +37,8 @@ def serve(folders: tuple[str], host: str, port: int, verbose:bool, ai_context:st
 @click.option("-b", "--set-benchmark", is_flag=True, help="Set responses as the benchmark responses")
 @click.option("-v", "--verbose", is_flag=True, help="Enable verbose logging")
 @click.option("-c", "--compare-with-ai", is_flag=True, help="Compare responses with AI")
-def batch_review(ai_context:str, batch_name:str, set_benchmark: bool, verbose, compare_with_ai: bool) -> None:
+@click.option("-d", "--conversation-dir", type = click.Path(exists=True, file_okay=False, dir_okay=True),default=CONVERSATION_DIR, help="Directory holding pre-arranged conversations")
+def batch_review(ai_context:str, batch_name:str, set_benchmark: bool, verbose, compare_with_ai: bool, conversation_dir: str) -> None:
     
     server.configure(
         ai_ctx_url = ai_context,
@@ -49,7 +50,7 @@ def batch_review(ai_context:str, batch_name:str, set_benchmark: bool, verbose, c
 
 
     logger.info("Starting batch review of conversations")
-    asyncio.run(batch_prompt_conversations(batch_name=batch_name, set_benchmark=set_benchmark))
+    asyncio.run(batch_prompt_conversations(conversation_dir = conversation_dir, batch_name=batch_name, set_benchmark=set_benchmark))
 
     if not set_benchmark:
         logger.info("Generating HTML report")
