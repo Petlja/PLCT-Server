@@ -14,6 +14,7 @@ from ..content.fileset import FileSet, LocalFileSet
 from ..ioutils import read_json, read_str, write_str
 from . import OPENAI_API_KEY
 
+
 logger = logging.getLogger(__name__)
 
 class ActivitySummary(BaseModel):
@@ -76,13 +77,17 @@ class ContextDatasetBuilder:
             write_str(chunk_text_path, chunk_text)
             chunk_meta_json_str = chunk_meta.model_dump_json(indent=2)
             write_str(metadata_path, chunk_meta_json_str)
-        oa_cln = openai.OpenAI(api_key = OPENAI_API_KEY)
+        oa_cln = openai.AzureOpenAI(
+            azure_endpoint = "https://petljaopenaiservice.openai.azure.com/", 
+            api_key= OPENAI_API_KEY,  
+            api_version="2"
+        )
         for embeding_size in embeding_sizes:
             embeding_path = os.path.join(chunk_dir, f"{chunk_hash}-{embeding_model}-{embeding_size}.json")
             if not os.path.exists(embeding_path):
                 response = oa_cln.embeddings.create(
                     input=chunk_text,
-                    model=embeding_model,
+                    model='text-embedding-ada-002',
                     dimensions=embeding_size,
                     encoding_format="float")
                 embeding = response.data[0].embedding

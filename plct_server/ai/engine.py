@@ -4,7 +4,7 @@ import os
 import glob
 from typing import AsyncIterator
 import chromadb
-from openai import AsyncOpenAI, OpenAI
+from openai import AsyncOpenAI, OpenAI, AzureOpenAI, AsyncAzureOpenAI
 from pydantic import BaseModel
 
 from plct_server.content.fileset import FileSet
@@ -82,10 +82,14 @@ class AiEngine:
             messages.append({"role": "assistant", "content": item[1]})
         messages.append({"role": "user", "content": preprocessed_user_message})
     
-        client = AsyncOpenAI(api_key = OPENAI_API_KEY)
+        client = AsyncAzureOpenAI(
+            azure_endpoint = "https://petljaopenaiservice.openai.azure.com", 
+            api_key= OPENAI_API_KEY,  
+            api_version="2024-06-01"
+        )
 
         completion = await client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-35-turbo",
             messages=messages,
             stream=False,
             max_tokens=1000,
@@ -109,10 +113,16 @@ class AiEngine:
                 lesson_summary=lesson_summary
             )
 
-        client = AsyncOpenAI(api_key = OPENAI_API_KEY)
+
+        
+        client = AsyncAzureOpenAI(
+            azure_endpoint = "https://petljaopenaiservice.openai.azure.com", 
+            api_key= OPENAI_API_KEY,  
+            api_version="2024-06-01"
+        )
 
         response = await client.embeddings.create(
-            model=EMBEDING_MODEL,
+            model='text-embedding-ada-002',
             input=preprocessed_query,
             encoding_format="float",
             dimensions = EMBEDING_SIZE
@@ -151,10 +161,14 @@ class AiEngine:
             messages.append({"role": "assistant", "content": item[1]})
         messages.append({"role": "user", "content": query})
 
-        client =  AsyncOpenAI(api_key = OPENAI_API_KEY)
+        client =  AsyncAzureOpenAI(
+            azure_endpoint = "https://petljaopenaiservice.openai.azure.com", 
+            api_key= OPENAI_API_KEY,  
+            api_version="2024-06-01"
+        )
         
         completion = await client.chat.completions.create(
-            model="gpt-4-0125-preview",
+            model="gpt-35-turbo",
             messages=messages,
             stream=True,
             max_tokens=2000,
