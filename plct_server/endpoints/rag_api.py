@@ -19,9 +19,11 @@ class RagSystemMessageRequest(BaseModel):
     query: str = ""
     course_key: str = ""
     activity_key: str = ""
+    condensed_history: str = ""
 
 class RagSystemMessageResponse(BaseModel):
     message: str = ""
+    condensed_history: str = ""
 
 api_key_header_scheme = APIKeyHeader(name="X-Auth-Key", auto_error=False)
 
@@ -41,9 +43,13 @@ def get_api_key(api_key_header: str = Security(api_key_header_scheme)) -> str:
 async def rag_system_message(response: Response, input: RagSystemMessageRequest,
                              key: str =  Security(get_api_key)) -> RagSystemMessageResponse:
     response.media_type = "application/json"
+    #TODO TEST make_system_message
     ai_engine = get_ai_engine()
-    rmsg = await ai_engine.make_system_message(input.history, input.query, input.course_key, input.activity_key)
-    return RagSystemMessageResponse(message=rmsg)
+    rmsg = await ai_engine.make_system_message(input.history, input.query, input.course_key, input.activity_key, input.condensed_history)
+    new_condensed_history = ""
+    if len(input.history > 1):
+        new_condensed_history = await ai_engine.generate_condensed_history(latestHistory=input.history[-2:], condensed_history=input.condensed_history)
+    return RagSystemMessageResponse(message=rmsg, condensed_history=new_condensed_history)
 
     
 

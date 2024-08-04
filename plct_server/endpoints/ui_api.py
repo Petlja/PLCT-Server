@@ -22,6 +22,7 @@ class ChatInput(BaseModel):
     history: List[ChatHistoryItem] = []
     question: str = ""
     accessKey: str = ""
+    condensedHistory: str = "" 
     contextAttributes: dict[str,str] = {}
 
 logger = logging.getLogger(__name__)
@@ -52,12 +53,17 @@ async def post_question(response: Response, input: ChatInput):
     course_key = input.contextAttributes.get("course_key")
     activity_key = input.contextAttributes.get("activity_key")
     history = [(item.q, item.a) for item in input.history]
+    new_condensed_history = ""
+    if (len(history) > 1):
+        new_condensed_history = await ai_engine.generate_condensed_history(latestHistory=history[-2:], condensed_history=input.condensedHistory) #sending previous summary + latest history
 
     try:
         g = await ai_engine.generate_answer(
             history=history, query=input.question, 
-            course_key=course_key, activity_key=activity_key)
-        return StreamingResponse(g, media_type="text/plain")
+            course_key=course_key, activity_key=activity_key, condensed_history=input.condensedHistory)
+        headers = {"Condensed-History": new_condensed_history}
+        logger.info(headers)
+        return StreamingResponse(g, media_type="text/plain", headers=headers)
     except OpenAIError as e:
         logger.warn(f"Error while calling OpenAI API: {e}")
         return Response("Ima tehničkih problema sa pristupom OpenAI, malo sačekaj pa pokušaj ponovo",

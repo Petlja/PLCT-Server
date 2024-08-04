@@ -14,7 +14,7 @@ from . import OPENAI_API_KEY
 from .prompt_templates import ( 
     preprocess_system_message_template, system_message_template, 
     system_message_summay_template, system_message_rag_template,
-    preprocess_user_message_template)
+    preprocess_user_message_template, system_message_condensed_history_template)
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +64,7 @@ class AiEngine:
         logger.debug(f"Embeddings loaded and indexed {EMBEDING_MODEL}-{EMBEDING_SIZE}")
 
     async def preprocess_query(self, history: list[tuple[str,str]], qyery: str, course_key: str, activity_key: str) -> str:
+        #TODO condensed history instead of full history
         course_summary, lesson_summary = self.ctx_data.get_summary_texts(
             course_key, activity_key)
         
@@ -100,7 +101,7 @@ class AiEngine:
         logger.debug(f"preprocessed_query: {preprocessed_user_message}")
         return preprocessed_user_message
     
-    async def make_system_message(self, history: list[tuple[str,str]], qyery: str, course_key: str, activity_key: str) -> str:
+    async def make_system_message(self, history: list[tuple[str,str]], qyery: str, course_key: str, activity_key: str, condensed_history: str) -> str:
         preprocessed_query = await self.preprocess_query(history, qyery, course_key, activity_key)
         
         course_summary, lesson_summary = self.ctx_data.get_summary_texts(course_key, activity_key)
@@ -113,6 +114,13 @@ class AiEngine:
                 lesson_summary=lesson_summary
             )
 
+
+        if(condensed_history != ""):
+            condensed_segment = system_message_condensed_history_template.format(
+                condensed_history=condensed_history
+            )
+        else:
+            condensed_segment = ""
 
         
         client = AsyncAzureOpenAI(
@@ -146,15 +154,20 @@ class AiEngine:
             chunks='\n\n'.join(chunk_strs)
         )
 
-        system_message = system_message_template + summary_segment + rag_segment
+        system_message = system_message_template + summary_segment + condensed_segment + rag_segment
 
         return system_message
 
     async def generate_answer(self,*, history: list[tuple[str,str]], query: str,
-                            course_key: str, activity_key: str) -> AsyncIterator[int]:
+                            course_key: str, activity_key: str, condensed_history: str) -> AsyncIterator[int]:
         
-        system_message = await self.make_system_message(history, query, course_key, activity_key)
+
+        system_message = await self.make_system_message(history, query, course_key, activity_key, condensed_history)
         
+
+
+        if (condensed_history != ""):
+            history = history[-1:]
         messages=[{"role": "system", "content": system_message}]
         for item in history:
             messages.append({"role": "user", "content": item[0]})
@@ -177,7 +190,43 @@ class AiEngine:
     
         async def answer_generator():
             async for chunk in completion:
-                yield chunk.choices[0].delta.content or ""
+                if len(chunk.choices) > 0:
+                    delta = chunk.choices[0].delta
+                    if delta.content:
+                        yield delta.content
 
         return answer_generator()
+    
+    async def generate_condensed_history(self, latestHistory: list[tuple[str,str]], condensed_history: str) -> str:
+        if (condensed_history != ""):
+            message = f"User and Assistant have discussed various topics. This is the summary: {condensed_history}"
+            message = message  + f"Latest conversion include this user question: {latestHistory[-1][0]}." \
+                    f" Assistant explained: {latestHistory[-1][1]}." \
+                    f" Provide me new summary based on previous summary and latest question and answer in the language of the latest question"
+        else:
+            message = f"Here is two previous interacions with assistant." \
+                    f"User question: {latestHistory[-2][0]}" \
+                    f"Assistant explained: {latestHistory[-2][1]}" \
+                    f"User question: {latestHistory[-1][0]}" \
+                    f"Assistant explained: {latestHistory[-1][1]}" \
+                    f"Provide me a summary based on previous questions and explanations in the language of the latest question"
 
+        messages =[{"role": "user", "content": message}]
+        client =  AsyncAzureOpenAI(
+            azure_endpoint = "https://petljaopenaiservice.openai.azure.com", 
+            api_key= OPENAI_API_KEY,  
+            api_version="2024-06-01"
+        )
+
+        completion = await client.chat.completions.create(
+            model="gpt-35-turbo",
+            messages=messages,
+            stream=False,
+            max_tokens=2000,
+            temperature=0
+        )
+
+        return completion.choices[0].message.content
+    
+
+   

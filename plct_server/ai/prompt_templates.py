@@ -48,3 +48,8 @@ system_message_rag_template = (
     "If the question is out of the scope of the above course and lesson, also consider the following.\n\n"
     "{chunks}\n\n"
 )
+
+system_message_condensed_history_template = (
+    "Use this summary of previous user question and assistant explanations: \n\n"
+    "{condensed_history}"
+)
