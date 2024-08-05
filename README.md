@@ -97,3 +97,35 @@ Yo can use `--ai-context` CLI or `ai_context_dir` config file option to specify 
 
 Yo can use `plct_server.ai.context_dataset` module in you scipt to create context dataset. 
 
+## Batch Review Command
+
+You can use the `batch-review` command to review conversation batches. This command helps in running batch reviews of conversations, setting benchmarks, and generating comparison reports.
+
+Ways to run the command:
+- use the `plct-serve` shell command:  
+  ```
+  plct-batch-review [OPTIONS]
+  ```
+- use as an extended command of PLCT CLI:  
+  ```
+  plct batch-review [OPTIONS]
+  ```
+
+
+
+**OPTIONS:**
+- `-a`, `--ai-context`: Folder with AI context
+- `-n`, `--batch-name`: Batch name (default: a newly generated UUID)
+- `-b`, `--set-benchmark`: Set responses as the benchmark responses
+- `-v`, `--verbose`: Enable verbose logging
+- `-c`, `--compare-with-ai`: Compare responses with AI
+- `-d`, `--conversation-dir`: Directory holding pre-arranged conversations (default: `eval/conversations/default`)
+
+**Example:**
+
+```
+plct batch-review -n test  -v
+```
+
+
+This command will configure the server, run the batch prompts for conversations and generate an HTML report comparing the responses.
