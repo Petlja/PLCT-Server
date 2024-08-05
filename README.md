@@ -124,8 +124,33 @@ Ways to run the command:
 **Example:**
 
 ```
-plct batch-review -n test  -v
+plct batch-review -n test -v
 ```
 
 
 This command will configure the server, run the batch prompts for conversations and generate an HTML report comparing the responses.
+
+The default conversations can be found in `eval/conversations/default/`. You can group up sets of conversations into a single json file. Here is an example:
+
+```json
+[
+	{
+		"history": [
+			[
+				"History item #1",
+				"History item #2"
+			],
+            [
+				"History item #3",
+				"History item #4"
+            ]
+		],
+		"query": "Query",
+		"response": "",
+		"benchmark_response": "Benchmark response",
+		"course_key": "course_key",
+		"activity_key": "activity_key",
+		"feedback": 0
+	}
+]
+```
