@@ -7,6 +7,8 @@ import json
 
 import yaml
 
+import pickle
+
 def read_str(path: str) -> str:
     with open(path, 'r', encoding='utf-8') as file:
         return file.read()
@@ -30,3 +32,7 @@ def read_yaml(path: str) -> dict|list|int|str|float:
 def write_yaml(path: str, content: dict|list|int|str|float) -> None:
     with open(path, 'w', encoding='utf-8') as file:
         yaml.dump(content, file, indent=2, default_flow_style=False, allow_unicode=True)
+
+def read_pickle(path: str) -> dict|list|int|str|float:
+    with open(path, 'rb') as file:
+        return pickle.load(file)
