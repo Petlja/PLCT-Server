@@ -43,7 +43,8 @@ def get_api_key(api_key_header: str = Security(api_key_header_scheme)) -> str:
 async def rag_system_message(response: Response, input: RagSystemMessageRequest,
                              key: str =  Security(get_api_key)) -> RagSystemMessageResponse:
     response.media_type = "application/json"
-    #TODO TEST make_system_message
+    new_condensed_history = ''
+    
     ai_engine = get_ai_engine()
     rmsg = await ai_engine.make_system_message(input.history, input.query, input.course_key, input.activity_key, input.condensed_history)
     new_condensed_history = ""

@@ -63,7 +63,9 @@ class AiEngine:
         )
         logger.debug(f"Embeddings loaded and indexed {EMBEDING_MODEL}-{EMBEDING_SIZE}")
 
-    async def preprocess_query(self, history: list[tuple[str,str]], qyery: str, course_key: str, activity_key: str) -> str:
+
+    #creates a more elaborated request using query, condnsed history and latest history
+    async def preprocess_query(self, history: list[tuple[str,str]], qyery: str, course_key: str, activity_key: str, condensed_history: str) -> str:
         #TODO condensed history instead of full history
         course_summary, lesson_summary = self.ctx_data.get_summary_texts(
             course_key, activity_key)
@@ -102,7 +104,7 @@ class AiEngine:
         return preprocessed_user_message
     
     async def make_system_message(self, history: list[tuple[str,str]], qyery: str, course_key: str, activity_key: str, condensed_history: str) -> str:
-        preprocessed_query = await self.preprocess_query(history, qyery, course_key, activity_key)
+        preprocessed_query = await self.preprocess_query(history, qyery, course_key, activity_key, condensed_history)
         
         course_summary, lesson_summary = self.ctx_data.get_summary_texts(course_key, activity_key)
 
@@ -159,7 +161,7 @@ class AiEngine:
         return system_message
 
     async def generate_answer(self,*, history: list[tuple[str,str]], query: str,
-                            course_key: str, activity_key: str, condensed_history: str) -> AsyncIterator[int]:
+                            course_key: str, activity_key: str, condensed_history: str = "") -> AsyncIterator[int]:
         
 
         system_message = await self.make_system_message(history, query, course_key, activity_key, condensed_history)
