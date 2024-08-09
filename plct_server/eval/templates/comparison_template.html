@@ -200,6 +200,9 @@
             display: inline-flex;
             width: 100%;
         }
+        .highlight-difference{
+            color: red;
+        }
     </style>
 </head>
 
@@ -215,7 +218,9 @@ Activity key: {{conversation.activity_key}}</div>
                 <div class="chat-message left">{{ history_item[1] }}</div>
                 {% endfor %}
             </div>
-            <div class="chat-message query {{ 'right' }}">{{ conversation.query }}</div>
+            <div class="chat-message query {{ 'right' }}">
+<div class="user-query">{{ conversation.query }}</div><div class="system-query" style="display: none;"><span class="{{ 'highlight-difference' if conversation.activity_key != conversation.query_metadata.activity_key else '' }}">Activity Key: {{ conversation.query_metadata['activity_key'] }}</span>
+System Query: {{ conversation.query_metadata.system_message }}</div></div>
             <div class="compare">
                 <div class="chat-message response {{ 'left' }}">
                     {{ conversation.response | safe }}
@@ -241,6 +246,24 @@ Activity key: {{conversation.activity_key}}</div>
         const chatContainers = document.querySelectorAll('.chat-container');
         const conversations = chatContainers.length;
         const navigationBallsContainer = document.querySelector('.navigation-balls');
+        const messages = document.querySelectorAll('.chat-message');
+
+        messages.forEach(function (message) {
+            message.addEventListener('click', function () {
+                if (event.ctrlKey) {
+                    const userQuery = message.querySelector('.user-query');
+                    const systemQuery = message.querySelector('.system-query');
+
+                    if (userQuery.style.display === 'none') {
+                        userQuery.style.display = 'block';
+                        systemQuery.style.display = 'none';
+                    } else {
+                        userQuery.style.display = 'none';
+                        systemQuery.style.display = 'block';
+                    }
+                }
+            });
+        });
 
         function createNavigationBalls() {
             for (let i = 0; i < conversations; i++) {

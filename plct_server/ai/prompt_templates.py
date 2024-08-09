@@ -49,13 +49,15 @@ system_message_rag_template = (
     "{chunks}\n\n"
 )
 
-compare_prompt =(
-    "Compare these two texts:\n\n"
+compare_prompt = (
+    "Compare these two texts based on the accuracy and completeness of the information they convey. Focus on whether the key concepts, facts, and ideas are preserved across both texts, ignoring the exact wording.\n\n"
+    "Text 1:\n"
     "```\n"
     "{current_text}\n"
     "```\n\n"
+    "Text 2:\n"
     "```\n"
     "{benchmark_text}\n"
     "```\n\n"
-    "Return your assessment of similarity as an integer on a scale from 0 to 5, where 0 means completely different and 5 means exactly the same.\n\n"
+    "On a scale from 0 to 5, where 0 means completely different in terms of conveyed information and 5 means very similar"
 )
