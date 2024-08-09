@@ -2,7 +2,7 @@ import json
 import logging
 import os
 import glob
-from typing import AsyncIterator, Optional, Tuple
+from typing import AsyncIterator, List, Optional, Tuple
 import chromadb
 from openai import AsyncOpenAI, OpenAI
 from pydantic import BaseModel
@@ -35,8 +35,8 @@ def get_ai_engine() -> "AiEngine":
     return ai_engine
 
 class QueryMetadata(BaseModel):
-    activity_key: str
-    activity_title: str
+    activity_key: list[str]
+    activity_title: list[str]
     system_message : Optional[str] = None
 
 EMBEDING_SIZE = 1536
@@ -144,13 +144,11 @@ class AiEngine:
             n_results=2)
 
         chunk_strs = []
-        query_metadata : QueryMetadata = None
+        query_metadata : QueryMetadata =  QueryMetadata(activity_key=[], activity_title=[])
 
         for chunk_hash, dist, metadata in zip(result["ids"][0], result["distances"][0], result["metadatas"][0]):
-            query_metadata = QueryMetadata(
-                activity_key=metadata["activity_key"],
-                activity_title=metadata["activity_title"],
-            )
+            query_metadata.activity_key.append(metadata["activity_key"])
+            query_metadata.activity_title.append(metadata["activity_title"])
             chunk_str = self.ctx_data.get_chunk_text(chunk_hash)
             chunk_strs.append(chunk_str)
 
@@ -191,7 +189,7 @@ class AiEngine:
         return answer_generator()
     
     async def generate_answer_with_info(self, *, history: list[tuple[str, str]], query: str,
-                                    course_key: str, activity_key: str) -> tuple[AsyncIterator[int], dict[str,str]]:
+                                    course_key: str, activity_key: str) -> tuple[AsyncIterator[int], QueryMetadata]:
     
         system_message_result, metadata= await self.make_system_message(history, query, course_key, activity_key)
         

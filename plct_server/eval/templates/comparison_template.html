@@ -219,7 +219,7 @@ Activity key: {{conversation.activity_key}}</div>
                 {% endfor %}
             </div>
             <div class="chat-message query {{ 'right' }}">
-<div class="user-query">{{ conversation.query }}</div><div class="system-query" style="display: none;"><span class="{{ 'highlight-difference' if conversation.activity_key != conversation.query_metadata.activity_key else '' }}">Activity Key: {{ conversation.query_metadata['activity_key'] }}</span>
+<div class="user-query">{{ conversation.query }}</div><div class="system-query" style="display: none;"><span class="{{ 'highlight-difference' if conversation.activity_key not in conversation.query_metadata.activity_key else '' }}">Chunk activity Key:<br>{{ conversation.query_metadata.activity_key[0] }}<br>{{ conversation.query_metadata.activity_key[1] }}</span>
 System Query: {{ conversation.query_metadata.system_message }}</div></div>
             <div class="compare">
                 <div class="chat-message response {{ 'left' }}">
