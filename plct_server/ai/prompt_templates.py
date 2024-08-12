@@ -1,5 +1,5 @@
 preprocess_system_message_template = (
-    "Consider the context of the folowing course and lesson.\n\n"
+    "Consider the context of the folowing course, lesson and summary of previous user questions and assistant explanations.\n\n"
     "Here is the course summery delimited by triple quotes:\n\n"
     "'''\n"
     "{course_summary}\n"
@@ -8,6 +8,10 @@ preprocess_system_message_template = (
     "'''\n\n"
     "{lesson_summary}\n"
     "'''\n\n"
+    "Here is the summary of previous user questions and assistant explanations delimited by triple quotes: \n"
+    "'''\n\n"
+    "{condensed_history}\n"
+    "```\n\n"
     "Allways answer in the language of the question.\n\n"
 )
 
@@ -47,4 +51,11 @@ system_message_summay_template = (
 system_message_rag_template = (
     "If the question is out of the scope of the above course and lesson, also consider the following.\n\n"
     "{chunks}\n\n"
+)
+
+system_message_condensed_history_template = (
+    "Here is the summary of previous user questions and assistant explanations delimited by triple quotes \n\n"
+    "```\n"
+    "{condensed_history}"
+    "'''\n\n"
 )
