@@ -46,9 +46,11 @@ async def rag_system_message(response: Response, input: RagSystemMessageRequest,
     new_condensed_history = ''
     
     ai_engine = get_ai_engine()
+    if (input.condensed_history != ""):
+        input.history = input.history[-1:]
     rmsg = await ai_engine.make_system_message(input.history, input.query, input.course_key, input.activity_key, input.condensed_history)
     new_condensed_history = ""
-    if len(input.history > 1):
+    if len(input.history) > 1:
         new_condensed_history = await ai_engine.generate_condensed_history(latestHistory=input.history[-2:], condensed_history=input.condensed_history)
     return RagSystemMessageResponse(message=rmsg, condensed_history=new_condensed_history)
 

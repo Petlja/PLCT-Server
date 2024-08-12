@@ -66,13 +66,14 @@ class AiEngine:
 
     #creates a more elaborated request using query, condnsed history and latest history
     async def preprocess_query(self, history: list[tuple[str,str]], qyery: str, course_key: str, activity_key: str, condensed_history: str) -> str:
-        #TODO condensed history instead of full history
+      
         course_summary, lesson_summary = self.ctx_data.get_summary_texts(
             course_key, activity_key)
         
         system_message = preprocess_system_message_template.format(
             course_summary=course_summary,
-            lesson_summary=lesson_summary
+            lesson_summary=lesson_summary,
+            condensed_history = condensed_history
         )
 
         preprocessed_user_message = preprocess_user_message_template.format(
@@ -162,14 +163,14 @@ class AiEngine:
 
     async def generate_answer(self,*, history: list[tuple[str,str]], query: str,
                             course_key: str, activity_key: str, condensed_history: str = "") -> AsyncIterator[int]:
-        
 
+        if (condensed_history != ""):
+            history = history[-1:]
+            
         system_message = await self.make_system_message(history, query, course_key, activity_key, condensed_history)
         
 
 
-        if (condensed_history != ""):
-            history = history[-1:]
         messages=[{"role": "system", "content": system_message}]
         for item in history:
             messages.append({"role": "user", "content": item[0]})
