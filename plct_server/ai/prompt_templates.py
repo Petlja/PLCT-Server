@@ -1,5 +1,5 @@
 preprocess_system_message_template = (
-    "Consider the context of the folowing course and lesson.\n\n"
+    "Consider the context of the folowing course, lesson and summary of previous user questions and assistant explanations.\n\n"
     "Here is the course summery delimited by triple quotes:\n\n"
     "'''\n"
     "{course_summary}\n"
@@ -8,6 +8,10 @@ preprocess_system_message_template = (
     "'''\n\n"
     "{lesson_summary}\n"
     "'''\n\n"
+    "Here is the summary of previous user questions and assistant explanations delimited by triple quotes: \n"
+    "'''\n\n"
+    "{condensed_history}\n"
+    "```\n\n"
     "Allways answer in the language of the question.\n\n"
 )
 
@@ -60,4 +64,10 @@ compare_prompt = (
     "{benchmark_text}\n"
     "```\n\n"
     "On a scale from 0 to 5, where 0 means completely different in terms of conveyed information and 5 means very similar"
+)
+system_message_condensed_history_template = (
+    "Here is the summary of previous user questions and assistant explanations delimited by triple quotes \n\n"
+    "```\n"
+    "{condensed_history}"
+    "'''\n\n"
 )

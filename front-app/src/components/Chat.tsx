@@ -27,6 +27,7 @@ export function Chat() {
     const [isAnswering, setAnswering] = useState(false);
     const [auth, setAuth] = useState("pending");
     const [history, setHistory] = useState<{ q: string; a: string }[]>([]);
+    const [condensedHistory, setCondensedHistory] = useState<string>("");
     const context = useContext(AppContext);
     const [searchParams] = useSearchParams();
     const [courseKey, setCourseKey] = useState<string>("-");
@@ -85,6 +86,7 @@ export function Chat() {
         if(activitiyKey !== "-")
             setMessages([welcomeMessage])
             setHistory([])
+            setCondensedHistory("")
     }, [activitiyKey]);
 
     async function postQuestion(question: string, withHistory = true) {
@@ -92,6 +94,7 @@ export function Chat() {
             "history": withHistory ? history : [],
             "question": question,
             "accessKey": context?.accessKey ?? "default",
+            "condensedHistory": condensedHistory,
             "contextAttributes": {"activity_key": activitiyKey, "course_key": courseKey}
         };
         const r = await fetch(
@@ -124,6 +127,10 @@ export function Chat() {
 
         const r = await postQuestion(textContent)
         
+        var condensedHistory = r.headers.get("Condensed-History");
+        console.log("CH: " + condensedHistory);
+        if (condensedHistory !== "")
+            setCondensedHistory(condensedHistory ? condensedHistory : "");
         var answerText = ""
 
         const reader = r.body!.getReader()
