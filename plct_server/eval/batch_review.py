@@ -10,7 +10,7 @@ from ..ioutils import read_json, write_json, read_str, write_str
 
 CONVERSATION_DIR = "plct_server/eval/conversations/default"
 RESULT_DIR = "plct_server/eval/results"
-COMPARATION_TEMPLATE = "plct_server/eval/templates/comparison_template.html"
+COMPARISON_TEMPLATE = "plct_server/eval/templates/comparison_template.html"
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +107,7 @@ async def generate_html_report(batch_name: str, use_ai_to_compare: bool) -> None
                 conversation.benchmark_response
                 )
 
-    template_content = read_str(COMPARATION_TEMPLATE)
+    template_content = read_str(COMPARISON_TEMPLATE)
     template = jinja2.Template(template_content)
     html_content = template.render(conversations=conversations)
 
