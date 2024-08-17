@@ -36,7 +36,7 @@ system_message_template = (
     "Answer in the Serbian language by default, using the same script as in the question (Latin or Cyrillic). When the question is in English, answer in English.\n\n"
 )
 
-system_message_summay_template = (
+system_message_summary_template = (
     "Consider the question in the context of the folowing course and lesson.\n\n"
     "Here is the course summary delimited by triple quotes:\n\n"
     "'''\n"
@@ -54,20 +54,44 @@ system_message_rag_template = (
 )
 
 compare_prompt = (
-    "Compare these two texts based on the accuracy and completeness of the information they convey. Focus on whether the key concepts, facts, and ideas are preserved across both texts, ignoring the exact wording.\n\n"
-    "Text 1:\n"
     "```\n"
+    "Answers 1:\n"
     "{current_text}\n"
     "```\n\n"
-    "Text 2:\n"
+    "Answers 2:\n"
     "```\n"
     "{benchmark_text}\n"
     "```\n\n"
-    "On a scale from 0 to 5, where 0 means completely different in terms of conveyed information and 5 means very similar"
 )
 system_message_condensed_history_template = (
     "Here is the summary of previous user questions and assistant explanations delimited by triple quotes \n\n"
     "```\n"
     "{condensed_history}"
     "'''\n\n"
+)
+
+
+system_compare_template = (
+    "Your answer should be a number representing the similarity score, where 0 means the information is completely different and 5 means the information is very similar.\n\n"
+    "Give no additional information, just the number.\n\n"
+    )
+
+condensed_history_template = (
+    "User and Assistant have discussed various topics. This is the summary: {condensed_history}\n"
+    "Latest conversation includes this user question: {latest_user_question}.\n"
+    "Assistant explained: {latest_assistant_explanation}.\n"
+    "Provide me a new summary based on the previous summary and the latest question and answer in the language of the latest question."
+)
+
+new_condensed_history_template = (
+    "Here are two previous interactions with the assistant.\n"
+    "User question: {previous_user_question_1}\n"
+    "Assistant explained: {previous_assistant_explanation_1}\n"
+    "User question: {previous_user_question_2}\n"
+    "Assistant explained: {previous_assistant_explanation_2}\n"
+    "Provide me a summary based on previous questions and explanations in the language of the latest question."
+)
+
+no_condensed_history_template = (
+    "This is the first interaction in this conversation, there is no condensed history\n"
 )

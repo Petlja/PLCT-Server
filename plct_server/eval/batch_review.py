@@ -5,7 +5,7 @@ import jinja2
 from typing import Optional, Tuple
 from markdown_it import MarkdownIt
 from pydantic import BaseModel
-from ..ai.engine import AiEngine, QueryMetadata, get_ai_engine
+from ..ai.engine import AiEngine, QueryContext, get_ai_engine
 from ..ioutils import read_json, write_json, read_str, write_str
 
 CONVERSATION_DIR = "plct_server/eval/conversations/default"
@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 class Conversation(BaseModel):
     history: list[tuple[str, str]]
+    condensed_history : Optional[str] = None
     query: str
     response: str
     benchmark_response: str
@@ -23,7 +24,7 @@ class Conversation(BaseModel):
     activity_key: str
     feedback: Optional[int] = None
     ai_assessment: Optional[int] = None
-    query_metadata: Optional[QueryMetadata]= None
+    query_context: Optional[QueryContext]= None
 
     def transform_markdown(self):
         md = MarkdownIt()
@@ -35,21 +36,24 @@ class Conversation(BaseModel):
         self.query = convert_to_html(self.query)
         self.response = convert_to_html(self.response)
         self.benchmark_response = convert_to_html(self.benchmark_response)
-        self.query_metadata.system_message = convert_to_html(self.query_metadata.system_message)
+        self.query_context.system_message = convert_to_html(self.query_context.system_message)
 
-async def run_test_case(ai_engine: AiEngine, test_case: Conversation) -> Tuple[str, QueryMetadata]:
-    answer_generator, metadata= await ai_engine.generate_answer_with_info(
+async def run_test_case(ai_engine: AiEngine, test_case: Conversation) -> Tuple[str, QueryContext]:
+    answer_generator = await ai_engine.generate_answer(
         history=test_case.history,
         query=test_case.query,
         course_key=test_case.course_key,
-        activity_key=test_case.activity_key
+        activity_key=test_case.activity_key,
+        condensed_history = test_case.condensed_history or ""
     )
+
+    context = ai_engine.get_last_query_context()
 
     answer = ""
     async for chunk in answer_generator:
         answer += chunk
 
-    return answer, metadata
+    return answer, context
 
 def load_conversations(directory: str) -> dict[str, list[Conversation]]:
     conversations_dict = {}
@@ -72,12 +76,12 @@ async def process_conversations(conversation_dir: str, output_dir: str, set_benc
     for file_name, conversations in conversations_dict.items():
         logger.info(f"Getting answers for {os.path.basename(output_dir)} {file_name}")
         for conversation in conversations:
-            response, metadata = await run_test_case(ai_engine, conversation)
+            response, context = await run_test_case(ai_engine, conversation)
             if set_benchmark:
                 conversation.benchmark_response = response
             else:
                 conversation.response = response
-            conversation.query_metadata = metadata
+            conversation.query_context = context
 
         result_file_suffix = "" if set_benchmark else "results_"
         result_file = os.path.join(output_dir, f"{result_file_suffix}{file_name}.json")

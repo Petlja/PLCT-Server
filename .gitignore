@@ -6,3 +6,4 @@ dist/
 build/
 dev-server.json
 /plct_server/eval/results
+/.vscode

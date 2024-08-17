@@ -39,24 +39,23 @@ def serve(folders: tuple[str], host: str, port: int, verbose:bool, ai_context:st
 @click.option("-c", "--compare-with-ai", is_flag=True, help="Compare responses with AI")
 @click.option("-d", "--conversation-dir", type = click.Path(exists=True, file_okay=False, dir_okay=True),default=CONVERSATION_DIR, help="Directory holding pre-arranged conversations")
 def batch_review(ai_context:str, batch_name:str, set_benchmark: bool, verbose, compare_with_ai: bool, conversation_dir: str) -> None:
-    
-    server.configure(
-        ai_ctx_url = ai_context,
-        verbose =  verbose)
-    
     import platform
     if platform.system()=='Windows':
        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-
-
+    
+    asyncio.run(batch_review_async(ai_context, batch_name, set_benchmark, verbose, compare_with_ai, conversation_dir))
+    
+async def batch_review_async(ai_context:str, batch_name:str, set_benchmark: bool, verbose, compare_with_ai: bool, conversation_dir: str):
+    server.configure(
+        ai_ctx_url = ai_context,
+        verbose =  verbose)
+      
     logger.info("Starting batch review of conversations")
-    asyncio.run(batch_prompt_conversations(conversation_dir = conversation_dir, batch_name=batch_name, set_benchmark=set_benchmark))
+    await batch_prompt_conversations(conversation_dir = conversation_dir, batch_name=batch_name, set_benchmark=set_benchmark)
 
     if not set_benchmark:
         logger.info("Generating HTML report")
-        asyncio.run(generate_html_report(batch_name, compare_with_ai))
-
-
+        await generate_html_report(batch_name, compare_with_ai)
 
 # This is the entry point for the server (see pyproject.toml)
 def cli() -> None:
