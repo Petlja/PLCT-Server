@@ -238,8 +238,8 @@ class AiEngine:
             message = condensed_history_template.format(condensed_history=condensed_history,
                         latest_question=latestHistory[-1][0], latest_answer=latestHistory[-1][1])
         else:
-            message = new_condensed_history_template.format(latestHistory[-2][0], latestHistory[-2][1],
-                       latestHistory[-1][0], latestHistory[-1][1])   
+            message = new_condensed_history_template.format(previous_user_question_1 = latestHistory[-2][0], previous_assistant_explanation_1 =latestHistory[-2][1],
+                      previous_user_question_2 = latestHistory[-1][0],previous_assistant_explanation_2 = latestHistory[-1][1])   
             
         messages =[{"role": "user", "content": message}]
 
