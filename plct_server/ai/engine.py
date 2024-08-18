@@ -64,7 +64,7 @@ class QueryContext(BaseModel):
     def get_all_chunk_activity_keys(self) -> str:
         return [item["activity_key"] for item in self.chunk_metadata]
             
-    def add_encoding_length(self, name: str, message: str, encoding: Encoding):
+    def add_encoding_length(self, name: str, message: str, encoding: Encoding) -> None:
         if name not in self.token_size:
             self.token_size[name] = 0
         self.token_size[name] += len(encoding.encode(message))
