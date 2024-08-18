@@ -86,7 +86,7 @@ async def process_conversations(conversation_dir: str, output_dir: str, set_benc
 
         result_file_suffix = "" if set_benchmark else "results_"
         result_file = os.path.join(output_dir, f"{result_file_suffix}{file_name}.json")
-        write_json(result_file, [conv.model_dump() for conv in conversations])
+        write_json(result_file, [conv.model_dump(exclude = {"encoding"}) for conv in conversations])
         logger.info(f"Results written to {result_file}")    
 
 async def batch_prompt_conversations(conversation_dir: str, batch_name: str, set_benchmark: bool) -> None:

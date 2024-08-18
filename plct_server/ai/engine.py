@@ -36,7 +36,7 @@ def get_ai_engine() -> "AiEngine":
         raise ValueError(f"{__name__} not initialized, call {__name__}.init first")
     return ai_engine
 
-def get_async_azure_openai_client(self) -> AsyncAzureOpenAI:
+def get_async_azure_openai_client() -> AsyncAzureOpenAI:
     return AsyncAzureOpenAI(
         azure_endpoint=AZURE_ENDPOINT,
         api_key=OPENAI_API_KEY,
@@ -56,15 +56,11 @@ class QueryContext(BaseModel):
     chunk_metadata : list[dict[str,str]] = []
     system_message : str = ""
     token_size : dict[str,int] = {}
-    encoding : Encoding = tiktoken.encoding_for_model(EMBEDDING_MODEL) 
-
-    class Config:
-        arbitrary_types_allowed = True
 
     def clear(self):
-        self.activity_key.clear()
-        self.activity_title.clear()
+        self.chunk_metadata.clear()
         self.system_message = ""
+        self.token_size.clear()
     
     def add_chunk_metadata(self, chunk_metadata: dict[str,str], distance: float):
         chunk_metadata["distance"] = str(distance)
@@ -73,10 +69,10 @@ class QueryContext(BaseModel):
     def get_all_chunk_activity_keys(self) -> str:
         return [item["activity_key"] for item in self.chunk_metadata]
             
-    def add_encoding_length(self, name: str, message: str):
+    def add_encoding_length(self, name: str, message: str, encoding: Encoding):
         if name not in self.token_size:
             self.token_size[name] = 0
-        self.token_size[name] += len(self.encoding.encode(message))
+        self.token_size[name] += len(encoding.encode(message))
     
     def get_encoding_length(self) -> int:
         return sum(self.token_size.values())
@@ -91,6 +87,7 @@ class AiEngine:
         self.ctx_data = ContextDataset(base_url)
         self.ch_cli = chromadb.Client()
         self.query_context = QueryContext()
+        self.encoding : Encoding = tiktoken.encoding_for_model(EMBEDDING_MODEL) 
         self._load_embeddings()
 
     def _load_embeddings(self):
@@ -212,10 +209,10 @@ class AiEngine:
 
         system_message = system_message_template + summary_segment + condensed_segment + rag_segment
 
-        self.query_context.add_encoding_length("system_message_template", system_message_template)
-        self.query_context.add_encoding_length("summary_segment", summary_segment)
-        self.query_context.add_encoding_length("condensed_segment", condensed_segment)
-        self.query_context.add_encoding_length("rag_segment", rag_segment)
+        self.query_context.add_encoding_length("system_message_template", system_message_template, self.encoding)
+        self.query_context.add_encoding_length("summary_segment", summary_segment, self.encoding)
+        self.query_context.add_encoding_length("condensed_segment", condensed_segment, self.encoding)
+        self.query_context.add_encoding_length("rag_segment", rag_segment, self.encoding)
 
         self.query_context.system_message = system_message
 
@@ -224,6 +221,7 @@ class AiEngine:
     async def generate_answer(self,*, history: list[tuple[str,str]], query: str,
                             course_key: str, activity_key: str, condensed_history: str) -> AsyncIterator[int]:
 
+        self.query_context.clear()
         # If the history is too long, we only keep the last MAX_HISTORY_LENGTH items
         if (condensed_history != ""):
             history = history[-MAX_HISTORY_LENGTH:]
@@ -234,9 +232,9 @@ class AiEngine:
         for item in history:
             messages.append({"role": "user", "content": item[0]})
             messages.append({"role": "assistant", "content": item[1]})
-            self.query_context.add_encoding_length(f"history", item[0] + item[1])
+            self.query_context.add_encoding_length(f"history", item[0] + item[1], self.encoding)
         messages.append({"role": "user", "content": query})
-        self.query_context.add_encoding_length("user_query", query)
+        self.query_context.add_encoding_length("user_query", query, self.encoding)
 
         if self.query_context.get_encoding_length() + RESPONSE_MAX_TOKENS > AZURE_MODEL_TOKEN_LIMIT:
             self.query_context.log_encoding_length()
