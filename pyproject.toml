@@ -31,8 +31,7 @@ pydantic-settings = "^2.2.1"
 zstandard = "^0.22.0"
 numpy = "^1.26.4"
 markdown-it-py = "^3.0.0"
-
-[tool.poetry.group.dev.dependencies]
+tiktoken = "^0.7.0"
 
 [build-system]
 requires = ["poetry-core", "setuptools"]

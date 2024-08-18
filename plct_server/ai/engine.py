@@ -1,11 +1,12 @@
 
 import logging
 import chromadb
+import tiktoken
 
-from typing import AsyncIterator, Optional
+from typing import AsyncIterator
 from openai import AsyncAzureOpenAI
 from pydantic import BaseModel
-
+from tiktoken import Encoding
 from .context_dataset import ContextDataset
 from . import OPENAI_API_KEY
 
@@ -16,26 +17,6 @@ from .prompt_templates import (
     compare_prompt, system_compare_template, condensed_history_template,
     new_condensed_history_template, no_condensed_history_template)
 
-AZURE_ENDPOINT = "https://petljaopenaiservice.openai.azure.com"
-API_VERSION = "2024-06-01"
-MAX_HISTORY_LENGTH = 1
-
-class QueryContext(BaseModel):
-    chunk_metadata : list[dict[str,str]] = []
-    system_message : str = ""
-
-    def clear(self):
-        self.activity_key.clear()
-        self.activity_title.clear()
-        self.system_message = ""
-    
-    def add_chunk_metadata(self, chunk_metadata: dict[str,str], distance: float):
-        chunk_metadata["distance"] = str(distance)
-        self.chunk_metadata.append(chunk_metadata)
-
-    def get_all_chunk_activity_key(self) -> str:
-        return [item["activity_key"] for item in self.chunk_metadata]
-    
     
 logger = logging.getLogger(__name__)
 
@@ -55,10 +36,54 @@ def get_ai_engine() -> "AiEngine":
         raise ValueError(f"{__name__} not initialized, call {__name__}.init first")
     return ai_engine
 
+def get_async_azure_openai_client(self) -> AsyncAzureOpenAI:
+    return AsyncAzureOpenAI(
+        azure_endpoint=AZURE_ENDPOINT,
+        api_key=OPENAI_API_KEY,
+        api_version=API_VERSION
+    )
+
 EMBEDDING_SIZE = 1536
 EMBEDDING_MODEL = "text-embedding-3-small"
 CHROMADB_COLLECTION_NAME = f"{EMBEDDING_MODEL}-{EMBEDDING_SIZE}"
+AZURE_MODEL_TOKEN_LIMIT = 8193
+AZURE_ENDPOINT = "https://petljaopenaiservice.openai.azure.com"
+API_VERSION = "2024-06-01"
+MAX_HISTORY_LENGTH = 1
+RESPONSE_MAX_TOKENS = 2000
 
+class QueryContext(BaseModel):
+    chunk_metadata : list[dict[str,str]] = []
+    system_message : str = ""
+    token_size : dict[str,int] = {}
+    encoding : Encoding = tiktoken.encoding_for_model(EMBEDDING_MODEL) 
+
+    class Config:
+        arbitrary_types_allowed = True
+
+    def clear(self):
+        self.activity_key.clear()
+        self.activity_title.clear()
+        self.system_message = ""
+    
+    def add_chunk_metadata(self, chunk_metadata: dict[str,str], distance: float):
+        chunk_metadata["distance"] = str(distance)
+        self.chunk_metadata.append(chunk_metadata)
+
+    def get_all_chunk_activity_keys(self) -> str:
+        return [item["activity_key"] for item in self.chunk_metadata]
+            
+    def add_encoding_length(self, name: str, message: str):
+        if name not in self.token_size:
+            self.token_size[name] = 0
+        self.token_size[name] += len(self.encoding.encode(message))
+    
+    def get_encoding_length(self) -> int:
+        return sum(self.token_size.values())
+    
+    def log_encoding_length(self) -> None:
+        for name, size in self.token_size.items():
+            logger.debug(f"Encoding length for {name}: {size}")
 
 class AiEngine:
     def __init__(self, base_url: str):
@@ -95,12 +120,6 @@ class AiEngine:
 
         logger.debug(f"Embeddings loaded and indexed {EMBEDDING_MODEL}-{EMBEDDING_SIZE}")
 
-    def _get_async_azure_openai_client(self) -> AsyncAzureOpenAI:
-        return AsyncAzureOpenAI(
-            azure_endpoint=AZURE_ENDPOINT,
-            api_key=OPENAI_API_KEY,
-            api_version=API_VERSION
-        )
     #creates a more elaborated request using query, condensed history and latest history
     async def preprocess_query(self, history: list[tuple[str,str]], query: str, course_key: str, activity_key: str, condensed_history: str) -> str:
       
@@ -126,7 +145,7 @@ class AiEngine:
             messages.append({"role": "assistant", "content": item[1]})
         messages.append({"role": "user", "content": preprocessed_user_message})
     
-        client = self._get_async_azure_openai_client()
+        client = get_async_azure_openai_client()
 
         completion = await client.chat.completions.create(
             model="gpt-35-turbo",
@@ -140,10 +159,10 @@ class AiEngine:
         logger.debug(f"preprocessed_query: {preprocessed_user_message}")
         return preprocessed_user_message
     
-    async def make_system_message(self, history: list[tuple[str,str]], qyery: str,
+    async def make_system_message(self, history: list[tuple[str,str]], query: str,
                                    course_key: str, activity_key: str, condensed_history: str) -> str:
         
-        preprocessed_query = await self.preprocess_query(history, qyery, course_key, activity_key, condensed_history)
+        preprocessed_query = await self.preprocess_query(history, query, course_key, activity_key, condensed_history)
         
         course_summary, lesson_summary = self.ctx_data.get_summary_texts(course_key, activity_key)
 
@@ -163,7 +182,7 @@ class AiEngine:
             condensed_segment = no_condensed_history_template
 
 
-        client = self._get_async_azure_openai_client()
+        client = get_async_azure_openai_client()
 
         response = await client.embeddings.create(
             model='text-embedding-ada-002',
@@ -193,6 +212,11 @@ class AiEngine:
 
         system_message = system_message_template + summary_segment + condensed_segment + rag_segment
 
+        self.query_context.add_encoding_length("system_message_template", system_message_template)
+        self.query_context.add_encoding_length("summary_segment", summary_segment)
+        self.query_context.add_encoding_length("condensed_segment", condensed_segment)
+        self.query_context.add_encoding_length("rag_segment", rag_segment)
+
         self.query_context.system_message = system_message
 
         return system_message
@@ -210,15 +234,22 @@ class AiEngine:
         for item in history:
             messages.append({"role": "user", "content": item[0]})
             messages.append({"role": "assistant", "content": item[1]})
+            self.query_context.add_encoding_length(f"history", item[0] + item[1])
         messages.append({"role": "user", "content": query})
+        self.query_context.add_encoding_length("user_query", query)
 
-        client =  self._get_async_azure_openai_client()
+        if self.query_context.get_encoding_length() + RESPONSE_MAX_TOKENS > AZURE_MODEL_TOKEN_LIMIT:
+            self.query_context.log_encoding_length()
+            logger.debug(f"{self.query_context.get_encoding_length()+ RESPONSE_MAX_TOKENS} tokens used")
+            raise ValueError("Context too large for model")
+
+        client =  get_async_azure_openai_client()
         
         completion = await client.chat.completions.create(
             model="gpt-35-turbo",
             messages=messages,
             stream=True,
-            max_tokens=2000,
+            max_tokens=RESPONSE_MAX_TOKENS,
             temperature=0
         )
     
@@ -243,16 +274,16 @@ class AiEngine:
             
         messages =[{"role": "user", "content": message}]
 
-        client = self._get_async_azure_openai_client()
+        client = get_async_azure_openai_client()
 
         completion = await client.chat.completions.create(
             model="gpt-35-turbo",
             messages=messages,
             stream=False,
-            max_tokens=2000,
+            max_tokens=RESPONSE_MAX_TOKENS,
             temperature=0
         )
-
+        logger.debug(f"condensed_history: {completion.choices[0].message.content}")
         return completion.choices[0].message.content
     
     async def compare_strings(self, response_text: str, benchmark_text: str) -> int:         
@@ -266,7 +297,7 @@ class AiEngine:
             {"role": "user", "content": compare_prompt_message}
         ]
 
-        client =  self._get_async_azure_openai_client()
+        client =  get_async_azure_openai_client()
 
         completion = await client.chat.completions.create(
             model="gpt-35-turbo",
@@ -282,8 +313,8 @@ class AiEngine:
             similarity_score = int(response)
         except ValueError:
             similarity_score = -1 
+        logger.debug(f"similarity_score: {similarity_score}")
         return similarity_score
     
-
-    def get_last_query_context(self):
+    def get_last_query_context(self) -> QueryContext:
         return self.query_context

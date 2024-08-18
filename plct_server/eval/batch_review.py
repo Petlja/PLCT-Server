@@ -1,10 +1,11 @@
 import logging
 import os
-import json
 import jinja2
+
 from typing import Optional, Tuple
 from markdown_it import MarkdownIt
 from pydantic import BaseModel
+
 from ..ai.engine import AiEngine, QueryContext, get_ai_engine
 from ..ioutils import read_json, write_json, read_str, write_str
 
@@ -73,8 +74,8 @@ async def process_conversations(conversation_dir: str, output_dir: str, set_benc
     ai_engine = get_ai_engine()
     conversations_dict = load_conversations(conversation_dir)
 
+    logger.info(f"Processing {len(conversations_dict)} conversation files")
     for file_name, conversations in conversations_dict.items():
-        logger.info(f"Getting answers for {os.path.basename(output_dir)} {file_name}")
         for conversation in conversations:
             response, context = await run_test_case(ai_engine, conversation)
             if set_benchmark:
@@ -86,6 +87,7 @@ async def process_conversations(conversation_dir: str, output_dir: str, set_benc
         result_file_suffix = "" if set_benchmark else "results_"
         result_file = os.path.join(output_dir, f"{result_file_suffix}{file_name}.json")
         write_json(result_file, [conv.model_dump() for conv in conversations])
+        logger.info(f"Results written to {result_file}")    
 
 async def batch_prompt_conversations(conversation_dir: str, batch_name: str, set_benchmark: bool) -> None:
     output_dir = CONVERSATION_DIR if set_benchmark else os.path.join(RESULT_DIR, batch_name)
@@ -113,6 +115,7 @@ async def generate_html_report(batch_name: str, use_ai_to_compare: bool) -> None
 
     report_path = os.path.join(RESULT_DIR, batch_name, 'report.html')
     write_str(report_path, html_content)
+    logger.info(f"Report generated at {report_path}")
 
 
 async def get_ai_assessment(response: str, benchmark_response: str) -> int:
