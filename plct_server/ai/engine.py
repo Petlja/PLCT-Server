@@ -210,7 +210,7 @@ class AiEngine:
             query_context.add_encoding_length("condensed_segment", condensed_segment, self.encoding)
             query_context.add_encoding_length("rag_segment", rag_segment, self.encoding)
 
-        query_context.system_message = system_message
+            query_context.system_message = system_message
 
         return system_message
 
