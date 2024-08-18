@@ -57,11 +57,6 @@ class QueryContext(BaseModel):
     system_message : str = ""
     token_size : dict[str,int] = {}
 
-    def clear(self):
-        self.chunk_metadata.clear()
-        self.system_message = ""
-        self.token_size.clear()
-    
     def add_chunk_metadata(self, chunk_metadata: dict[str,str], distance: float):
         chunk_metadata["distance"] = str(distance)
         self.chunk_metadata.append(chunk_metadata)
@@ -86,7 +81,6 @@ class AiEngine:
         logger.debug(f"ai_context_dir: {base_url}")
         self.ctx_data = ContextDataset(base_url)
         self.ch_cli = chromadb.Client()
-        self.query_context = QueryContext()
         self.encoding : Encoding = tiktoken.encoding_for_model(EMBEDDING_MODEL) 
         self._load_embeddings()
 
@@ -157,7 +151,7 @@ class AiEngine:
         return preprocessed_user_message
     
     async def make_system_message(self, history: list[tuple[str,str]], query: str,
-                                   course_key: str, activity_key: str, condensed_history: str) -> str:
+                                   course_key: str, activity_key: str, condensed_history: str, query_context : QueryContext = None) -> str:
         
         preprocessed_query = await self.preprocess_query(history, query, course_key, activity_key, condensed_history)
         
@@ -199,7 +193,8 @@ class AiEngine:
 
         chunk_strs = []
         for chunk_hash, dist, metadata in zip(result["ids"][0], result["distances"][0], result["metadatas"][0]):
-            self.query_context.add_chunk_metadata(metadata, dist)
+            if query_context:
+                query_context.add_chunk_metadata(metadata, dist)
             chunk_str = self.ctx_data.get_chunk_text(chunk_hash)
             chunk_strs.append(chunk_str)
 
@@ -209,36 +204,37 @@ class AiEngine:
 
         system_message = system_message_template + summary_segment + condensed_segment + rag_segment
 
-        self.query_context.add_encoding_length("system_message_template", system_message_template, self.encoding)
-        self.query_context.add_encoding_length("summary_segment", summary_segment, self.encoding)
-        self.query_context.add_encoding_length("condensed_segment", condensed_segment, self.encoding)
-        self.query_context.add_encoding_length("rag_segment", rag_segment, self.encoding)
+        if query_context:
+            query_context.add_encoding_length("system_message_template", system_message_template, self.encoding)
+            query_context.add_encoding_length("summary_segment", summary_segment, self.encoding)
+            query_context.add_encoding_length("condensed_segment", condensed_segment, self.encoding)
+            query_context.add_encoding_length("rag_segment", rag_segment, self.encoding)
 
-        self.query_context.system_message = system_message
+        query_context.system_message = system_message
 
         return system_message
 
     async def generate_answer(self,*, history: list[tuple[str,str]], query: str,
-                            course_key: str, activity_key: str, condensed_history: str) -> AsyncIterator[int]:
+                            course_key: str, activity_key: str, condensed_history: str) -> tuple[AsyncIterator[int], QueryContext]:
 
-        self.query_context.clear()
+        query_context = QueryContext()
         # If the history is too long, we only keep the last MAX_HISTORY_LENGTH items
         if (condensed_history != ""):
             history = history[-MAX_HISTORY_LENGTH:]
             
-        system_message = await self.make_system_message(history, query, course_key, activity_key, condensed_history)
+        system_message = await self.make_system_message(history, query, course_key, activity_key, condensed_history, query_context)
         
         messages=[{"role": "system", "content": system_message}]
         for item in history:
             messages.append({"role": "user", "content": item[0]})
             messages.append({"role": "assistant", "content": item[1]})
-            self.query_context.add_encoding_length(f"history", item[0] + item[1], self.encoding)
+            query_context.add_encoding_length(f"history", item[0] + item[1], self.encoding)
         messages.append({"role": "user", "content": query})
-        self.query_context.add_encoding_length("user_query", query, self.encoding)
+        query_context.add_encoding_length("user_query", query, self.encoding)
 
-        if self.query_context.get_encoding_length() + RESPONSE_MAX_TOKENS > AZURE_MODEL_TOKEN_LIMIT:
-            self.query_context.log_encoding_length()
-            logger.debug(f"{self.query_context.get_encoding_length()+ RESPONSE_MAX_TOKENS} tokens used")
+        if query_context.get_encoding_length() + RESPONSE_MAX_TOKENS > AZURE_MODEL_TOKEN_LIMIT:
+            query_context.log_encoding_length()
+            logger.debug(f"{query_context.get_encoding_length()+ RESPONSE_MAX_TOKENS} tokens used")
             raise ValueError("Context too large for model")
 
         client =  get_async_azure_openai_client()
@@ -258,11 +254,10 @@ class AiEngine:
                     if delta.content:
                         yield delta.content
 
-        return answer_generator()
+        return answer_generator(), query_context
     
     async def generate_condensed_history(self, latestHistory: list[tuple[str,str]],
                                           condensed_history: str) -> str:
-           
         if condensed_history != "":
             message = condensed_history_template.format(condensed_history=condensed_history,
                         latest_question=latestHistory[-1][0], latest_answer=latestHistory[-1][1])
@@ -313,6 +308,3 @@ class AiEngine:
             similarity_score = -1 
         logger.debug(f"similarity_score: {similarity_score}")
         return similarity_score
-    
-    def get_last_query_context(self) -> QueryContext:
-        return self.query_context

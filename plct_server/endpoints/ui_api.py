@@ -58,7 +58,7 @@ async def post_question(response: Response, input: ChatInput):
         new_condensed_history = await ai_engine.generate_condensed_history(latestHistory=history[-2:], condensed_history=input.condensedHistory) #sending previous summary + latest history
 
     try:
-        g = await ai_engine.generate_answer(
+        g, _ = await ai_engine.generate_answer(
             history=history, query=input.question, 
             course_key=course_key, activity_key=activity_key, condensed_history=input.condensedHistory)
         headers = {"Condensed-History": new_condensed_history}
