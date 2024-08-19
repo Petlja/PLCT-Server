@@ -171,7 +171,7 @@ class AiEngine:
                 condensed_history=condensed_history
             )
         else:
-            condensed_segment = no_condensed_history_template
+            condensed_segment = ""
 
 
         client = get_async_azure_openai_client()
