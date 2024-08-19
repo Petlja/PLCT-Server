@@ -1,4 +1,4 @@
-preprocess_system_message_template = (
+preprocess_system_message_template_with_history = (
     "Consider the context of the folowing course, lesson and summary of previous user questions and assistant explanations.\n\n"
     "Here is the course summery delimited by triple quotes:\n\n"
     "'''\n"
@@ -12,6 +12,18 @@ preprocess_system_message_template = (
     "'''\n\n"
     "{condensed_history}\n"
     "```\n\n"
+    "Allways answer in the language of the question.\n\n"
+)
+preprocess_system_message_template = (
+    "Consider the context of the folowing course, lesson and summary of previous user questions and assistant explanations.\n\n"
+    "Here is the course summery delimited by triple quotes:\n\n"
+    "'''\n"
+    "{course_summary}\n"
+    "'''\n\n"
+    "Here is the lesson summery delimited by triple quotes:\n"
+    "'''\n\n"
+    "{lesson_summary}\n"
+    "'''\n\n"
     "Allways answer in the language of the question.\n\n"
 )
 
@@ -90,8 +102,4 @@ new_condensed_history_template = (
     "User question: {previous_user_question_2}\n"
     "Assistant explained: {previous_assistant_explanation_2}\n"
     "Provide me a summary based on previous questions and explanations in the language of the latest question."
-)
-
-no_condensed_history_template = (
-    "This is the first interaction in this conversation, there is no condensed history\n"
 )

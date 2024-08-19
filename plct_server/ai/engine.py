@@ -15,7 +15,8 @@ from .prompt_templates import (
     system_message_summary_template, system_message_rag_template,
     preprocess_user_message_template, system_message_condensed_history_template,
     compare_prompt, system_compare_template, condensed_history_template,
-    new_condensed_history_template, no_condensed_history_template)
+    new_condensed_history_template, condensed_history_template,
+    preprocess_system_message_template_with_history)
 
     
 logger = logging.getLogger(__name__)
@@ -119,13 +120,17 @@ class AiEngine:
             course_key, activity_key)
         
         if condensed_history == "":
-            condensed_history = no_condensed_history_template
-        
-        system_message = preprocess_system_message_template.format(
-            course_summary=course_summary,
-            lesson_summary=lesson_summary,
-            condensed_history = condensed_history
-        )
+            system_message = preprocess_system_message_template.format(
+                course_summary=course_summary,
+                lesson_summary=lesson_summary,
+            )     
+        else:
+            system_message = preprocess_system_message_template_with_history.format(
+                course_summary=course_summary,
+                lesson_summary=lesson_summary,
+                condensed_history = condensed_history
+            )
+
 
         preprocessed_user_message = preprocess_user_message_template.format(
             user_input=query
@@ -217,7 +222,6 @@ class AiEngine:
 
     async def generate_answer(self,*, history: list[tuple[str,str]], query: str,
                             course_key: str, activity_key: str, condensed_history: str) -> tuple[AsyncIterator[int], QueryContext]:
-
         query_context = QueryContext()
         # If the history is too long, we only keep the last MAX_HISTORY_LENGTH items
         if (condensed_history != ""):
@@ -261,7 +265,7 @@ class AiEngine:
                                           condensed_history: str) -> str:
         if condensed_history != "":
             message = condensed_history_template.format(condensed_history=condensed_history,
-                        latest_question=latestHistory[-1][0], latest_answer=latestHistory[-1][1])
+                        latest_user_question=latestHistory[-1][0], latest_assistant_explanation=latestHistory[-1][1])
         else:
             message = new_condensed_history_template.format(previous_user_question_1 = latestHistory[-2][0], previous_assistant_explanation_1 =latestHistory[-2][1],
                       previous_user_question_2 = latestHistory[-1][0],previous_assistant_explanation_2 = latestHistory[-1][1])   

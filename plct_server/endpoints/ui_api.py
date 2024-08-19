@@ -1,5 +1,6 @@
 import logging
 import os
+import json
 from typing import List
 from fastapi import APIRouter, Response
 from fastapi.responses import StreamingResponse
@@ -24,6 +25,16 @@ class ChatInput(BaseModel):
     accessKey: str = ""
     condensedHistory: str = "" 
     contextAttributes: dict[str,str] = {}
+
+async def stream_response(answer, condensed_history):
+    metadata = {
+        "condensed_history": condensed_history
+    }
+
+    yield json.dumps(metadata).encode('utf-8') + b'\n'
+
+    async for chunk in answer:
+        yield chunk.encode('utf-8')
 
 logger = logging.getLogger(__name__)
 # logger.setLevel(logging.DEBUG)
@@ -60,10 +71,8 @@ async def post_question(response: Response, input: ChatInput):
     try:
         g, _ = await ai_engine.generate_answer(
             history=history, query=input.question, 
-            course_key=course_key, activity_key=activity_key, condensed_history=input.condensedHistory)
-        headers = {"Condensed-History": new_condensed_history}
-        logger.info(headers)
-        return StreamingResponse(g, media_type="text/plain", headers=headers)
+            course_key=course_key, activity_key=activity_key, condensed_history= new_condensed_history)  
+        return StreamingResponse(stream_response(g, new_condensed_history), media_type="text/plain")
     except OpenAIError as e:
         logger.warn(f"Error while calling OpenAI API: {e}")
         return Response("Ima tehničkih problema sa pristupom OpenAI, malo sačekaj pa pokušaj ponovo",
