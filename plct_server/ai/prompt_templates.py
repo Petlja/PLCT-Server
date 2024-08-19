@@ -11,7 +11,7 @@ preprocess_system_message_template_with_history = (
     "Here is the summary of previous user questions and assistant explanations delimited by triple quotes: \n"
     "'''\n\n"
     "{condensed_history}\n"
-    "```\n\n"
+    "'''\n\n"
     "Allways answer in the language of the question.\n\n"
 )
 preprocess_system_message_template = (
@@ -66,19 +66,19 @@ system_message_rag_template = (
 )
 
 compare_prompt = (
-    "```\n"
+    "'''\n"
     "Answers 1:\n"
     "{current_text}\n"
-    "```\n\n"
+    "'''\n\n"
     "Answers 2:\n"
-    "```\n"
+    "'''\n"
     "{benchmark_text}\n"
-    "```\n\n"
+    "'''\n\n"
 )
 system_message_condensed_history_template = (
     "Here is the summary of previous user questions and assistant explanations delimited by triple quotes \n\n"
-    "```\n"
-    "{condensed_history}"
+    "'''\n"
+    "{condensed_history}\n"
     "'''\n\n"
 )
 
