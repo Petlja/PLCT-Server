@@ -51,6 +51,7 @@ AZURE_ENDPOINT = "https://petljaopenaiservice.openai.azure.com"
 API_VERSION = "2024-06-01"
 MAX_HISTORY_LENGTH = 1
 RESPONSE_MAX_TOKENS = 2000
+PREPROCESS_QUERY_MAX_TOKENS = 1000
 
 class QueryContext(BaseModel):
     chunk_metadata : list[dict[str,str]] = []
@@ -142,7 +143,7 @@ class AiEngine:
             model="gpt-35-turbo",
             messages=messages,
             stream=False,
-            max_tokens=1000,
+            max_tokens=PREPROCESS_QUERY_MAX_TOKENS,
             temperature=0
         )
 
