@@ -88,6 +88,14 @@ system_compare_template = (
     "Give no additional information, just the number.\n\n"
     )
 
+condensed_history_system = (
+    "You are an AI assistant. Your task is to help summarize conversations between the user and the assistant.\n"
+    "Use the provided templates to generate concise summaries based on the given context.\n"
+    "For the condensed history template, summarize the previous discussions and the latest interaction.\n"
+    "For the new condensed history template, summarize the two provided interactions.\n"
+    "Ensure the summary is in the language of the latest user question.\n"
+)
+
 condensed_history_template = (
     "User and Assistant have discussed various topics. This is the summary: {condensed_history}\n"
     "Latest conversation includes this user question: {latest_user_question}.\n"

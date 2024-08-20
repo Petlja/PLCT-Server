@@ -1,14 +1,11 @@
 import logging
-import os
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, Header, Response, Security
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, HTTPException, Response, Security
 from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
-from openai import OpenAIError
 
 from ..content.server import get_server_content
-from ..ai.engine import get_ai_engine
+from ..ai.engine import QueryError, get_ai_engine
 
 logger = logging.getLogger(__name__)
 
@@ -45,16 +42,35 @@ async def rag_system_message(response: Response, input: RagSystemMessageRequest,
     response.media_type = "application/json"
     new_condensed_history = ""
     ai_engine = get_ai_engine()
+    try:
+        if input.condensed_history:
+            input.history = input.history[-1:]
 
-    if input.condensed_history:
-        input.history = input.history[-1:]
-        new_condensed_history = await ai_engine.generate_condensed_history(latestHistory=input.history, condensed_history=input.condensed_history)
-        system_message = await ai_engine.make_system_message(input.history, input.query, input.course_key, input.activity_key, new_condensed_history)
-    else:
-        system_message = await ai_engine.make_system_message(input.history, input.query, input.course_key, input.activity_key, input.condensed_history)
-        if len(input.history) > 1:
-            new_condensed_history = await ai_engine.generate_condensed_history(latestHistory=input.history, condensed_history=input.condensed_history)
-
+            new_condensed_history = await ai_engine.generate_condensed_history(
+                latestHistory=input.history,
+                condensed_history=input.condensed_history)
+            
+            system_message = await ai_engine.make_system_message(
+                history=input.history, 
+                query=input.query, 
+                course_key=input.course_key, 
+                activity_key=input.activity_key, 
+                condensed_history=new_condensed_history)
+        else:
+            system_message = await ai_engine.make_system_message(
+                history=input.history, 
+                query=input.query, 
+                course_key=input.course_key, 
+                activity_key=input.activity_key,
+                condensed_history=input.condensed_history)
+            
+            if len(input.history) > 1:
+                new_condensed_history = await ai_engine.generate_condensed_history(
+                    latestHistory=input.history, 
+                    condensed_history=input.condensed_history)
+    except QueryError as e:
+        logger.error(f"QueryError: {e}")
+        return Response("Error", media_type="text/plain")
     return RagSystemMessageResponse(message=system_message, condensed_history=new_condensed_history)
 
     

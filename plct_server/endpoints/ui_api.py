@@ -1,7 +1,7 @@
 import logging
 import os
 import json
-from typing import List
+from typing import AsyncGenerator, List, Union
 from fastapi import APIRouter, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -26,7 +26,7 @@ class ChatInput(BaseModel):
     condensedHistory: str = "" 
     contextAttributes: dict[str,str] = {}
 
-async def stream_response(answer, condensed_history):
+async def stream_response(answer, condensed_history) -> AsyncGenerator[bytes]:
     metadata = {
         "condensed_history": condensed_history
     }
@@ -37,61 +37,38 @@ async def stream_response(answer, condensed_history):
         yield chunk.encode('utf-8')
 
 logger = logging.getLogger(__name__)
-# logger.setLevel(logging.DEBUG)
-
-
 OPENAI_API_KEY = os.environ["CHATAI_OPENAI_API_KEY"]
 
 
 @router.post("/api/chat")
-async def post_question(response: Response, input: ChatInput):
+async def post_question(response: Response, input: ChatInput) -> Union[StreamingResponse, Response]:
     response.media_type = "text/plain; charset=utf-8"
-    # access_control = AccessControlService()  # Update this according to your access control service implementation
-    #db_context_factory = AiPetljaDbContextFactory()  # Update this according to your database context factory implementation
-
-    #if not access_control.is_access_allowed(input.accessKey):
-    #    return "Pristup četu nije onogućen"
-    # elif access_control.is_quota_exceeded(input.accessKey):
-    #    return "Ispunjena je tvoja kvota pitanja u tekućem satu, prokušaj malo kasnije"
-
     logger.debug(f"Chat input: {input}")
-    if input.question == "_test":
-        return Response("_OK", media_type="text/plain")
-
     ai_engine = get_ai_engine()
-
     logger.debug(f"Context attributes: {input.contextAttributes}")
     course_key = input.contextAttributes.get("course_key")
     activity_key = input.contextAttributes.get("activity_key")
     history = [(item.q, item.a) for item in input.history]
     new_condensed_history = ""
-    if (len(history) > 1):
-        new_condensed_history = await ai_engine.generate_condensed_history(latestHistory=history[-2:], condensed_history=input.condensedHistory) #sending previous summary + latest history
 
+    if (len(history) > 2):
+        new_condensed_history = await ai_engine.generate_condensed_history(
+            latestHistory=history[-2:], 
+            condensed_history=input.condensedHistory)
     try:
         g, _ = await ai_engine.generate_answer(
             history=history, query=input.question, 
-            course_key=course_key, activity_key=activity_key, condensed_history= new_condensed_history)  
-        return StreamingResponse(stream_response(g, new_condensed_history), media_type="text/plain")
+            course_key=course_key, activity_key=activity_key, 
+            condensed_history= new_condensed_history)  
+        
+        return StreamingResponse(
+            stream_response(g, new_condensed_history),
+            media_type="text/plain")
+    
     except OpenAIError as e:
         logger.warn(f"Error while calling OpenAI API: {e}")
         return Response("Ima tehničkih problema sa pristupom OpenAI, malo sačekaj pa pokušaj ponovo",
                          media_type="text/plain")
-
-    # try:
-    #     with db_context_factory.create_context() as db:
-    #         log_item = ChatLog(
-    #             access_key=input.accessKey,
-    #             question=input.question,
-    #             full_context="",
-    #             answer=result_text,
-    #             answer_html="",
-    #             timestamp=datetime.now()
-    #         )
-    #         db.add(log_item)
-    #         db.commit()
-    # except Exception as e:
-    #     logger.error(f"Database error: {e}")
 
 class CourseItem(BaseModel):
     title: str
