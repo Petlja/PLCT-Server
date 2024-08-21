@@ -80,7 +80,7 @@ async def process_conversations(conversation_dir: str, output_dir: str, set_benc
                 conversation.benchmark_response = response
             else:
                 conversation.response = response
-            conversation.query_context = context
+                conversation.query_context = context
 
         result_file_suffix = "" if set_benchmark else "results_"
         result_file = os.path.join(output_dir, f"{result_file_suffix}{file_name}.json")
