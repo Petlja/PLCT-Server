@@ -125,7 +125,7 @@ export function Chat() {
         setMessages([...messages, outMessage]);
 
         const r = await postQuestion(textContent);
-        var isFirstChunk = true;   
+        var hasInitialData = false;   
         var answerText = "";
 
         const reader = r.body!.getReader()
@@ -136,20 +136,23 @@ export function Chat() {
                 break;
 
             const chunkText = utf8decoder.decode(value);
+            if (!hasInitialData) {
+                const metadataEndIndex = chunkText.indexOf('\n');
+                if (metadataEndIndex !== -1) {
+                        const jsonText = chunkText.slice(0, metadataEndIndex);
+                        const metadata = JSON.parse(jsonText);
 
-        const metadataEndIndex = chunkText.indexOf('\n');
-            if (metadataEndIndex !== -1) {
-                const jsonText = chunkText.slice(0, metadataEndIndex);
-                const metadata = JSON.parse(jsonText);
+                        let condensedHistory = metadata.condensed_history;
 
-                let condensedHistory = metadata.condensed_history;
+                        if (condensedHistory !== "")
+                            setCondensedHistory(condensedHistory ? condensedHistory : "");
 
-                if (condensedHistory !== "")
-                    setCondensedHistory(condensedHistory ? condensedHistory : "");
-
-                // Process the remaining part of the chunk as streaming data
-                answerText += chunkText.slice(metadataEndIndex + 1);
-                isFirstChunk = false;
+                        hasInitialData = true;
+                        answerText += chunkText.slice(metadataEndIndex + 1);
+                }
+                else{
+                    answerText += chunkText;
+                }
             } else {
                 answerText += chunkText;
             }
@@ -184,12 +187,13 @@ export function Chat() {
             if (courses.length > 0)
                 setCourseKey(courses[0].course_key)
             
-            const r = await postQuestion("_test", false);
-            const testAnswer = await r.text()
-            if (testAnswer === "_OK") {
+            const statusResponse = await fetch("../api/chat", {
+                method: 'GET'
+            });
+
+            if (statusResponse.status === 200) {
                 setAuth("ok");
-            }
-            else {
+            } else {
                 setAuth("fail");
             }
         }

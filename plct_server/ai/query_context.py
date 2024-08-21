@@ -13,9 +13,8 @@ class QueryContext(BaseModel):
     system_message : str = ""
     token_size : dict[str,int] = {}
 
-    def add_chunk_metadata(self, chunk_metadata: dict[str,str], distance: float):
-        chunk_metadata["distance"] = str(distance)
-        self.chunk_metadata.append(chunk_metadata)
+    def set_chunk_metadata(self, chunk_metadata: dict[str,str]):
+        self.chunk_metadata = chunk_metadata
 
     def get_all_chunk_activity_keys(self) -> str:
         return [item["activity_key"] for item in self.chunk_metadata]

@@ -33,44 +33,28 @@ def get_api_key(api_key_header: str = Security(api_key_header_scheme)) -> str:
     raise HTTPException(status_code=401, detail="Unauthorized")
     
 
-
-
-
 @router.post("/api/rag-system-message")
 async def rag_system_message(response: Response, input: RagSystemMessageRequest,
                              key: str =  Security(get_api_key)) -> RagSystemMessageResponse:
     response.media_type = "application/json"
     new_condensed_history = ""
     ai_engine = get_ai_engine()
-    try:
-        if input.condensed_history:
-            input.history = input.history[-1:]
-
-            new_condensed_history = await ai_engine.generate_condensed_history(
-                latestHistory=input.history,
-                condensed_history=input.condensed_history)
-            
-            system_message = await ai_engine.make_system_message(
+    try:                  
+        system_message = await ai_engine.make_system_message(
                 history=input.history, 
                 query=input.query, 
                 course_key=input.course_key, 
                 activity_key=input.activity_key, 
-                condensed_history=new_condensed_history)
-        else:
-            system_message = await ai_engine.make_system_message(
-                history=input.history, 
-                query=input.query, 
-                course_key=input.course_key, 
-                activity_key=input.activity_key,
                 condensed_history=input.condensed_history)
-            
-            if len(input.history) > 1:
-                new_condensed_history = await ai_engine.generate_condensed_history(
-                    latestHistory=input.history, 
-                    condensed_history=input.condensed_history)
+        
+        new_condensed_history = await ai_engine.generate_condensed_history(
+            history=input.history, 
+            condensed_history=input.condensed_history)
+        
     except QueryError as e:
         logger.error(f"QueryError: {e}")
-        return Response("Error", media_type="text/plain")
+        return HTTPException(status_code=400, detail="QueryError")
+    
     return RagSystemMessageResponse(message=system_message, condensed_history=new_condensed_history)
 
     

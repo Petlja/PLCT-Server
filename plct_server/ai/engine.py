@@ -4,8 +4,9 @@ import chromadb
 import tiktoken
 
 from tiktoken import Encoding
-from typing import AsyncIterator
+from typing import Any, AsyncIterator, Coroutine, Union
 from openai import AsyncAzureOpenAI
+from openai.resources.chat.completions import ChatCompletion
 from .context_dataset import ContextDataset
 from .query_context import QueryContext, QueryError
 from . import OPENAI_API_KEY
@@ -99,7 +100,7 @@ class AiEngine:
 
         logger.debug(f"Embeddings loaded and indexed {CDB_EMBEDDING_MODEL}-{CDB_EMBEDDING_SIZE}")
 
-    async def _create_query(self, message: list[dict[str, str]], model: str, max_tokens: int, stream : bool) -> str:
+    async def _handle_query_submission(self, message: list[dict[str, str]], model: str, max_tokens: int, stream : bool) -> Union[str, Coroutine[Any, Any, ChatCompletion]]:
         client = get_async_azure_openai_client()
 
         def encode_message_content(message: list[dict[str, str]]) -> int:
@@ -109,8 +110,11 @@ class AiEngine:
             return total_length
         
         if encode_message_content(message) > AZURE_MODEL_TOKEN_LIMIT - RESPONSE_MAX_TOKENS:
-            raise QueryError(f"Context too large for model. Tokens used{encode_message_content(message)}\nResponse tokens: {RESPONSE_MAX_TOKENS}\nModel token limit: {AZURE_MODEL_TOKEN_LIMIT}")
-
+            raise QueryError((
+                f"Context too large for model. Tokens used: {encode_message_content(message)}",
+                f"Response tokens: {RESPONSE_MAX_TOKENS}",
+                f"Model token limit: {AZURE_MODEL_TOKEN_LIMIT}"
+            ))
 
         completion = await client.chat.completions.create(
             model=model,
@@ -119,12 +123,17 @@ class AiEngine:
             max_tokens=max_tokens,
             temperature=0
         )
-        return completion.choices[0].message.content
+
+        if stream:
+            return completion
+        else:
+            return completion.choices[0].message.content
+    
 
     async def _create_embedding(self, model: str, input: str, encoding_format: str, dimensions: int) -> str:
         client = get_async_azure_openai_client()
 
-        if self.encoding.encode(input) > AZURE_MODEL_TOKEN_LIMIT:
+        if len(self.encoding.encode(input)) > AZURE_MODEL_TOKEN_LIMIT:
             raise QueryError(f"Embedding input too large for model. Tokens used: {len(self.encoding.encode(input))}\nModel token limit: {AZURE_MODEL_TOKEN_LIMIT}")
     
         response = await client.embeddings.create(
@@ -159,21 +168,19 @@ class AiEngine:
 
         messages = create_message(system_message, history, query)  
 
-        responese = self._create_query(
+        response = await self._handle_query_submission(
             message= messages,
             model= LLM_MODEL,
             max_tokens= PREPROCESS_QUERY_MAX_TOKENS,
             stream= False)
 
-        preprocessed_user_message = query + '\n' + responese
+        preprocessed_user_message = query + '\n' + response
         logger.debug(f"preprocessed_query: {preprocessed_user_message}")
         return preprocessed_user_message
     
     async def make_system_message(self, history: list[tuple[str,str]], query: str,
                                    course_key: str, activity_key: str, condensed_history: str, query_context : QueryContext = None) -> str:
-        
-        preprocessed_query = await self.preprocess_query(history, query, course_key, activity_key, condensed_history)
-        
+                
         course_summary, lesson_summary = self.ctx_data.get_summary_texts(course_key, activity_key)
 
         if course_summary is None or lesson_summary is None:
@@ -186,11 +193,14 @@ class AiEngine:
 
         if condensed_history:
             condensed_segment = system_message_condensed_history_template.format(condensed_history=condensed_history)
+            history = history[-MAX_HISTORY_LENGTH:]
         else:
             condensed_segment = ""
 
+        preprocessed_query = await self.preprocess_query(history, query, course_key, activity_key, condensed_history)
+        logger.debug(f"Query after elaboration: {preprocessed_query}")
 
-        query_embedding = self._create_embedding(
+        query_embedding = await self._create_embedding(
             model=LLM_EMBEDDING_MODEL,
             input=preprocessed_query,
             encoding_format="float",
@@ -204,12 +214,19 @@ class AiEngine:
             where={"course_key": course_key},
             n_results=2)
 
-        chunk_strs = []
+        chunk_strs : list[str, str] = []
+        chunk_metadata : list[dict[str, str]] = []
+        chunk_hash : str
+        dist : float
+        metadata : dict[str, str]
         for chunk_hash, dist, metadata in zip(result["ids"][0], result["distances"][0], result["metadatas"][0]):
-            if query_context:
-                query_context.add_chunk_metadata(metadata, dist)
+            metadata["distance"] = str(dist)
+            chunk_metadata.append(metadata)
             chunk_str = self.ctx_data.get_chunk_text(chunk_hash)
             chunk_strs.append(chunk_str)
+
+
+        logger.debug(f"chunk_metadata: {chunk_metadata}")
 
         rag_segment = system_message_rag_template.format(
             chunks='\n\n'.join(chunk_strs)
@@ -227,6 +244,7 @@ class AiEngine:
                 ],
                 self.encoding
             )
+            query_context.set_chunk_metadata(chunk_metadata)
 
         return system_message
 
@@ -243,16 +261,16 @@ class AiEngine:
 
         for item in history:
             query_context.add_encoding_length("history", item[0] + item[1], self.encoding) 
-            query_context.add_encoding_length("user_query", query, self.encoding)
+        query_context.add_encoding_length("user_query", query, self.encoding)
 
-        completion = self._create_query(
+        response = await self._handle_query_submission(
             message= messages,
             model= LLM_MODEL,
             max_tokens= RESPONSE_MAX_TOKENS, 
             stream=True)
     
         async def answer_generator():
-            async for chunk in completion:
+            async for chunk in response:
                 if len(chunk.choices) > 0:
                     delta = chunk.choices[0].delta
                     if delta.content:
@@ -260,33 +278,41 @@ class AiEngine:
 
         return answer_generator(), query_context
     
-    async def generate_condensed_history(self, latestHistory: list[tuple[str,str]],
+    async def generate_condensed_history(self, history: list[tuple[str,str]],
                                           condensed_history: str) -> str:
+        if len(history) < 2:
+            return ""
+        
         if condensed_history:
+            latest_user_question, latest_assistant_explanation = history.pop()
             message = condensed_history_template.format(
                 condensed_history=condensed_history,
-                latest_user_question=latestHistory[-1][0],
-                latest_assistant_explanation=latestHistory[-1][1])
+                latest_user_question=latest_user_question,
+                latest_assistant_explanation=latest_assistant_explanation
+            )
         else:
+            previous_user_question_2, previous_assistant_explanation_2 = history.pop()
+            previous_user_question_1, previous_assistant_explanation_1 = history.pop()
             message = new_condensed_history_template.format(
-                previous_user_question_1 = latestHistory[-2][0],
-                previous_assistant_explanation_1 =latestHistory[-2][1],
-                previous_user_question_2 = latestHistory[-1][0],
-                previous_assistant_explanation_2 = latestHistory[-1][1])   
-            
+                previous_user_question_1=previous_user_question_1,
+                previous_assistant_explanation_1=previous_assistant_explanation_1,
+                previous_user_question_2=previous_user_question_2,
+                previous_assistant_explanation_2=previous_assistant_explanation_2
+            )
+
         messages = create_message(
             system= condensed_history_system,
             history=[],
             query=message)
 
-        respones = self._create_query(
+        response = await self._handle_query_submission(
             message=messages, 
             model=LLM_MODEL, 
             max_tokens=RESPONSE_MAX_TOKENS, 
             stream=False)
-        logger.debug(f"condensed_history: {respones}")
+        logger.debug(f"condensed_history: {response}")
 
-        return respones
+        return response
     
     async def compare_strings(self, response_text: str, benchmark_text: str) -> int:         
         compare_prompt_message = compare_prompt.format(
@@ -299,7 +325,7 @@ class AiEngine:
             history=[],
             query=compare_prompt_message)
 
-        response = self._create_query(
+        response = await self._handle_query_submission(
             message=messages,
             model= LLM_MODEL,
             max_tokens= 50, 

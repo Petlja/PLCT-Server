@@ -1,7 +1,7 @@
 import logging
 import os
 import json
-from typing import AsyncGenerator, List, Union
+from typing import AsyncGenerator, List
 from fastapi import APIRouter, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -26,7 +26,7 @@ class ChatInput(BaseModel):
     condensedHistory: str = "" 
     contextAttributes: dict[str,str] = {}
 
-async def stream_response(answer, condensed_history) -> AsyncGenerator[bytes]:
+async def stream_response(answer, condensed_history) -> AsyncGenerator[bytes, None]:
     metadata = {
         "condensed_history": condensed_history
     }
@@ -40,29 +40,38 @@ logger = logging.getLogger(__name__)
 OPENAI_API_KEY = os.environ["CHATAI_OPENAI_API_KEY"]
 
 
+@router.get("/api/chat")
+async def get_chat() -> Response:
+    return Response(status_code=200)
+
 @router.post("/api/chat")
-async def post_question(response: Response, input: ChatInput) -> Union[StreamingResponse, Response]:
+async def post_question(response: Response, input: ChatInput) -> Response:
     response.media_type = "text/plain; charset=utf-8"
     logger.debug(f"Chat input: {input}")
-    ai_engine = get_ai_engine()
     logger.debug(f"Context attributes: {input.contextAttributes}")
+    
     course_key = input.contextAttributes.get("course_key")
     activity_key = input.contextAttributes.get("activity_key")
     history = [(item.q, item.a) for item in input.history]
-    new_condensed_history = ""
 
-    if (len(history) > 2):
-        new_condensed_history = await ai_engine.generate_condensed_history(
-            latestHistory=history[-2:], 
-            condensed_history=input.condensedHistory)
-    try:
-        g, _ = await ai_engine.generate_answer(
-            history=history, query=input.question, 
-            course_key=course_key, activity_key=activity_key, 
-            condensed_history= new_condensed_history)  
+
+    ai_engine = get_ai_engine()
+    try:           
+        generated_answer, _ = await ai_engine.generate_answer(
+            history=history, 
+            query=input.question, 
+            course_key=course_key, 
+            activity_key=activity_key, 
+            condensed_history=input.condensedHistory)  
         
+        new_condensed_history = await ai_engine.generate_condensed_history(
+            history=history, 
+            condensed_history=input.condensedHistory)
+
         return StreamingResponse(
-            stream_response(g, new_condensed_history),
+            stream_response(
+                generated_answer,
+                new_condensed_history),
             media_type="text/plain")
     
     except OpenAIError as e:
