@@ -151,8 +151,12 @@ class AiEngine:
     async def _create_embedding(self, input: str, encoding_format: str, dimensions: int) -> str:
         client = self.get_async_azure_openai_client("embedding")
 
-        if len(self.encoding.encode(input)) > self.embedding_model_config["CONTEXT_SIZE"]:
-            raise QueryError(f"Embedding input too large for model. Tokens used: {len(self.encoding.encode(input))}\nModel token limit: {AZURE_MODEL_TOKEN_LIMIT}")
+        token_limit = self.embedding_model_config["CONTEXT_SIZE"]
+
+        if len(self.encoding.encode(input)) > token_limit:
+            raise QueryError((
+                f"Embedding input too large for model. Tokens used: {len(self.encoding.encode(input))}",
+                f"Model token limit: {token_limit}"))
     
         response = await client.embeddings.create(
             model=self.embedding_model_config["LLM_MODEL"],
