@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "plct-server"
-version = "0.1.8"
+version = "0.1.10"
 description = ""
 authors = ["Nebojsa Vasiljevic <nebojsa.vasiljevic@gmail.com>"]
 license = "MIT"
@@ -30,8 +30,8 @@ aiofiles = "^23.2.1"
 pydantic-settings = "^2.2.1"
 zstandard = "^0.22.0"
 numpy = "^1.26.4"
-
-[tool.poetry.group.dev.dependencies]
+markdown-it-py = "^3.0.0"
+tiktoken = "^0.7.0"
 
 [build-system]
 requires = ["poetry-core", "setuptools"]
@@ -39,3 +39,4 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry.scripts]
 plct-serve = "plct_server.cli_main:cli"
+plct-batch-review = "plct_server.cli_main:batch_review_cli"

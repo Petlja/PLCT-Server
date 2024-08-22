@@ -49,7 +49,6 @@ export function Chat() {
                 }
             });
         const lessons = await r_lessons.json();
-        console.log(lessons);
         setLessonList(lessons);
         if (lessons.length > 0)
             setLessonKey(lessons[0].key)
@@ -125,13 +124,9 @@ export function Chat() {
 
         setMessages([...messages, outMessage]);
 
-        const r = await postQuestion(textContent)
-        
-        var condensedHistory = r.headers.get("Condensed-History");
-        console.log("CH: " + condensedHistory);
-        if (condensedHistory !== "")
-            setCondensedHistory(condensedHistory ? condensedHistory : "");
-        var answerText = ""
+        const r = await postQuestion(textContent);
+        var hasInitialData = false;   
+        var answerText = "";
 
         const reader = r.body!.getReader()
 
@@ -139,7 +134,29 @@ export function Chat() {
             const { done, value } = await reader.read();
             if (done)
                 break;
-            answerText += utf8decoder.decode(value)
+
+            const chunkText = utf8decoder.decode(value);
+            if (!hasInitialData) {
+                const metadataEndIndex = chunkText.indexOf('\n');
+                if (metadataEndIndex !== -1) {
+                        const jsonText = chunkText.slice(0, metadataEndIndex);
+                        const metadata = JSON.parse(jsonText);
+
+                        let condensedHistory = metadata.condensed_history;
+
+                        if (condensedHistory !== "")
+                            setCondensedHistory(condensedHistory ? condensedHistory : "");
+
+                        hasInitialData = true;
+                        answerText += chunkText.slice(metadataEndIndex + 1);
+                }
+                else{
+                    answerText += chunkText;
+                }
+            } else {
+                answerText += chunkText;
+            }
+
             const answerHtml = marked.parse(answerText)
             const inMessage: MessageModel = {
                 direction: "incoming",
@@ -170,12 +187,13 @@ export function Chat() {
             if (courses.length > 0)
                 setCourseKey(courses[0].course_key)
             
-            const r = await postQuestion("_test", false);
-            const testAnswer = await r.text()
-            if (testAnswer === "_OK") {
+            const statusResponse = await fetch("../api/chat", {
+                method: 'GET'
+            });
+
+            if (statusResponse.status === 200) {
                 setAuth("ok");
-            }
-            else {
+            } else {
                 setAuth("fail");
             }
         }

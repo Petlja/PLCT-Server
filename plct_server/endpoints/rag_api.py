@@ -1,14 +1,12 @@
 import logging
-import os
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, Header, Response, Security
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, HTTPException, Response, Security
 from fastapi.security import APIKeyHeader
-from pydantic import BaseModel
 from openai import OpenAIError
+from pydantic import BaseModel
 
 from ..content.server import get_server_content
-from ..ai.engine import get_ai_engine
+from ..ai.engine import QueryError, get_ai_engine
 
 logger = logging.getLogger(__name__)
 
@@ -36,23 +34,33 @@ def get_api_key(api_key_header: str = Security(api_key_header_scheme)) -> str:
     raise HTTPException(status_code=401, detail="Unauthorized")
     
 
-
-
-
 @router.post("/api/rag-system-message")
 async def rag_system_message(response: Response, input: RagSystemMessageRequest,
                              key: str =  Security(get_api_key)) -> RagSystemMessageResponse:
     response.media_type = "application/json"
-    new_condensed_history = ''
-    
-    ai_engine = get_ai_engine()
-    if (input.condensed_history != ""):
-        input.history = input.history[-1:]
-    rmsg = await ai_engine.make_system_message(input.history, input.query, input.course_key, input.activity_key, input.condensed_history)
     new_condensed_history = ""
-    if len(input.history) > 1:
-        new_condensed_history = await ai_engine.generate_condensed_history(latestHistory=input.history[-2:], condensed_history=input.condensed_history)
-    return RagSystemMessageResponse(message=rmsg, condensed_history=new_condensed_history)
+    ai_engine = get_ai_engine()
+    try:                  
+        system_message = await ai_engine.make_system_message(
+                history=input.history, 
+                query=input.query, 
+                course_key=input.course_key, 
+                activity_key=input.activity_key, 
+                condensed_history=input.condensed_history)
+        
+        new_condensed_history = await ai_engine.generate_condensed_history(
+            history=input.history, 
+            condensed_history=input.condensed_history)
+        
+    except QueryError as e:
+        logger.error(f"QueryError: {e}")
+        return HTTPException(status_code=500, detail="QueryError")
+    
+    except OpenAIError as e:
+        logger.error(f"OpenAIError: {e}")
+        return HTTPException(status_code=500, detail="OpenAIError")
+    
+    return RagSystemMessageResponse(message=system_message, condensed_history=new_condensed_history)
 
     
 

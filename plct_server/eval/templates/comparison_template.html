@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Conversation Comparison Report</title>
+    <style>
+        body {
+            height: 97vh;
+            width: 100vw;
+            margin: 0 auto;
+        }
+
+        .chat-container {
+            width: 100%;
+            border-collapse: collapse;
+            height: 90%;
+            overflow: auto;
+        }
+
+        .chat-container::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .chat-container::-webkit-scrollbar-thumb {
+            background-color: #888;
+            border-radius: 10px;
+        }
+
+        .chat-container::-webkit-scrollbar-thumb:hover {
+            background-color: #555;
+        }
+
+        .chat-container::-webkit-scrollbar-track {
+            background-color: #f1f1f1;
+        }
+
+        .chat-container {
+            scrollbar-width: thin;
+            scrollbar-color: #888 #f1f1f1;
+        }
+
+        .chat-container {
+            -ms-overflow-style: -ms-autohiding-scrollbar;
+        }
+
+        .conversations {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            padding-top: 20px;
+        }
+
+        .chat-message {
+            padding: 10px;
+            margin: 5px;
+            border-radius: 10px;
+            max-width: 75%;
+            display: inline-block;
+            clear: both;
+            white-space: pre-wrap;
+        }
+
+        .chat-message>* {
+            margin: 0;
+        }
+
+        .history div:nth-child(odd) {
+            background-color: #f2f2f2;
+        }
+
+        .history div:nth-child(even) {
+            background-color: #d2e0f7;
+        }
+
+        .query {
+            background-color: #f7f7f7;
+        }
+
+        .left {
+            float: left;
+        }
+
+        .right {
+            float: right;
+        }
+
+        .response {
+            position: relative;
+            background-color: #d2e0f7;
+            width: 48%;
+        }
+
+        .ai-assessment {
+            color: white;
+            font-size: 10px;
+            position: absolute;
+            top: -5px;
+            right: 0px;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 2px 5px;
+            border-radius: 3px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .response:hover .ai-assessment {
+            opacity: 1;
+        }
+
+        .benchmark {
+            background-color: #82acef;
+            position: relative;
+            width: 48%;
+        }
+
+        .benchmark::after {
+            content: "Benchmark";
+            color: white;
+            font-size: 10px;
+            position: absolute;
+            top: -5px;
+            right: 0px;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 2px 5px;
+            border-radius: 3px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .benchmark:hover::after {
+            opacity: 1;
+        }
+
+        .feedback-positive::before {
+            content: "Positive Feedback";
+            color: white;
+            font-size: 10px;
+            position: absolute;
+            top: 15px;
+            right: 0px;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 2px 5px;
+            border-radius: 3px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .feedback-negative::before {
+            content: "Negative Feedback";
+            color: white;
+            font-size: 10px;
+            position: absolute;
+            top: 15px;
+            right: 0px;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 2px 5px;
+            border-radius: 3px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .feedback::before {
+            content: attr(data-feedback);
+            color: white;
+            font-size: 10px;
+            position: absolute;
+            top: -5px;
+            left: 0px;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 2px 5px;
+            border-radius: 3px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .benchmark:hover::before {
+            opacity: 1;
+        }
+
+        .navigation-balls {
+            display: flex;
+            justify-content: center;
+            margin-top: 20px;
+        }
+
+        .ball {
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            background-color: #f2f2f2;
+            margin: 0 5px;
+            cursor: pointer;
+        }
+
+        .ball.active {
+            background-color: #82acef;
+        }
+
+        .compare {
+            display: inline-flex;
+            width: 100%;
+        }
+        .highlight-difference{
+            color: red;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="conversations">
+        {% for conversation in conversations %}
+        <div class="chat-container" id="conversation-{{ conversation_index }}">
+            <div class="history">
+                <div class="chat-message left">Course key: {{conversation.course_key}}
+Activity key: {{conversation.activity_key}}</div>
+                {% for history_item in conversation.history %}
+                <div class="chat-message right">{{ history_item[0] }}</div>
+                <div class="chat-message left">{{ history_item[1] }}</div>
+                {% endfor %}
+            </div>
+            <div class="chat-message query {{ 'right' }}">
+<div class="user-query">{{ conversation.query }}</div><div class="system-query" style="display: none;"><span class="{{ 'highlight-difference' if conversation.activity_key not in conversation.query_context.get_all_chunk_activity_keys() else '' }}">Chunk activity Key:<br>
+    {% for key in conversation.query_context.get_all_chunk_activity_keys() %}
+{{ key }}<br>
+    {% endfor %}</span>
+System Query: {{ conversation.query_context.system_message }}</div></div>
+            <div class="compare">
+                <div class="chat-message response {{ 'left' }}">
+                    {{ conversation.response | safe }}
+                    {% if conversation.ai_assessment is not none %}
+                    <div class="ai-assessment">Ocena slicnosti: {{ conversation.ai_assessment }}</div>
+                    {% endif %}
+                </div>
+
+                <div class="chat-message benchmark right {{ 'feedback-positive' if conversation.feedback == 1 else 'feedback-negative' if conversation.feedback == 0 else '' }}"
+                    data-feedback="{{ 'Good' if conversation.feedback == 1 else 'Bad' if conversation.feedback == 0 else '' }}">
+                    {{ conversation.benchmark_response | safe }}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+        <div class="navigation-balls">
+        </div>
+    </div>
+
+
+    <script>
+        let currentConversationIndex = 0;
+        const chatContainers = document.querySelectorAll('.chat-container');
+        const conversations = chatContainers.length;
+        const navigationBallsContainer = document.querySelector('.navigation-balls');
+        const messages = document.querySelectorAll('.chat-message');
+
+        messages.forEach(function (message) {
+            message.addEventListener('click', function () {
+                if (event.ctrlKey) {
+                    const userQuery = message.querySelector('.user-query');
+                    const systemQuery = message.querySelector('.system-query');
+
+                    if (userQuery.style.display === 'none') {
+                        userQuery.style.display = 'block';
+                        systemQuery.style.display = 'none';
+                    } else {
+                        userQuery.style.display = 'none';
+                        systemQuery.style.display = 'block';
+                    }
+                }
+            });
+        });
+
+        function createNavigationBalls() {
+            for (let i = 0; i < conversations; i++) {
+                const ball = document.createElement('div');
+                ball.classList.add('ball');
+                ball.dataset.index = i;
+                ball.addEventListener('click', () => showConversation(i));
+                navigationBallsContainer.appendChild(ball);
+            }
+        }
+
+        function updateNavigationBalls() {
+            document.querySelectorAll('.ball').forEach((ball, i) => {
+                ball.classList.toggle('active', i === currentConversationIndex);
+            });
+        }
+
+        function showConversation(index) {
+            chatContainers.forEach((container, i) => {
+                container.style.display = i === index ? 'block' : 'none';
+            });
+            currentConversationIndex = index;
+            updateNavigationBalls();
+        }
+
+        function navigate(direction) {
+            if (direction === 'next' && currentConversationIndex < conversations - 1) {
+                currentConversationIndex++;
+            } else if (direction === 'prev' && currentConversationIndex > 0) {
+                currentConversationIndex--;
+            }
+            showConversation(currentConversationIndex);
+        }
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'ArrowRight') {
+                navigate('next');
+            } else if (event.key === 'ArrowLeft') {
+                navigate('prev');
+            }
+        });
+
+        createNavigationBalls();
+        showConversation(currentConversationIndex);
+    </script>
+</body>
+
+</html>
