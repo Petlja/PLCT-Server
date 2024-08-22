@@ -78,16 +78,17 @@ class ContextDatasetBuilder:
             chunk_meta_json_str = chunk_meta.model_dump_json(indent=2)
             write_str(metadata_path, chunk_meta_json_str)
         oa_cln = openai.AzureOpenAI(
-            azure_endpoint = "https://petljaopenaiservice.openai.azure.com/", 
+            azure_endpoint = "https://petljaopenaiservicev2.openai.azure.com", 
             api_key= OPENAI_API_KEY,  
-            api_version="2"
+            api_version="2023-05-15",
+            azure_deployment= 'text-embedding-3-large'
         )
         for embeding_size in embeding_sizes:
             embeding_path = os.path.join(chunk_dir, f"{chunk_hash}-{embeding_model}-{embeding_size}.json")
             if not os.path.exists(embeding_path):
                 response = oa_cln.embeddings.create(
                     input=chunk_text,
-                    model='text-embedding-ada-002',
+                    model=embeding_model,
                     dimensions=embeding_size,
                     encoding_format="float")
                 embeding = response.data[0].embedding

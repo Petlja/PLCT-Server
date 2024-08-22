@@ -2,6 +2,7 @@ import logging
 from typing import List
 from fastapi import APIRouter, HTTPException, Response, Security
 from fastapi.security import APIKeyHeader
+from openai import OpenAIError
 from pydantic import BaseModel
 
 from ..content.server import get_server_content
@@ -53,7 +54,11 @@ async def rag_system_message(response: Response, input: RagSystemMessageRequest,
         
     except QueryError as e:
         logger.error(f"QueryError: {e}")
-        return HTTPException(status_code=400, detail="QueryError")
+        return HTTPException(status_code=500, detail="QueryError")
+    
+    except OpenAIError as e:
+        logger.error(f"OpenAIError: {e}")
+        return HTTPException(status_code=500, detail="OpenAIError")
     
     return RagSystemMessageResponse(message=system_message, condensed_history=new_condensed_history)
 

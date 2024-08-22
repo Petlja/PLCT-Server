@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from openai import OpenAIError
 
 from ..content.server import get_server_content
-from ..ai.engine import get_ai_engine
+from ..ai.engine import get_ai_engine, QueryError
 
 logger = logging.getLogger(__name__)
 
@@ -74,10 +74,15 @@ async def post_question(response: Response, input: ChatInput) -> Response:
                 new_condensed_history),
             media_type="text/plain")
     
+    except QueryError as e:
+        logger.error(f"QueryError: {e}")
+        return Response("Ima tehničkih problema sa pristupom OpenAI, malo sačekaj pa pokušaj ponovo",
+                         media_type="text/plain")
     except OpenAIError as e:
         logger.warn(f"Error while calling OpenAI API: {e}")
         return Response("Ima tehničkih problema sa pristupom OpenAI, malo sačekaj pa pokušaj ponovo",
                          media_type="text/plain")
+    
 
 class CourseItem(BaseModel):
     title: str

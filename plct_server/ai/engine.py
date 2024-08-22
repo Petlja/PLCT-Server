@@ -7,6 +7,8 @@ from tiktoken import Encoding
 from typing import Any, AsyncIterator, Coroutine, Union
 from openai import AsyncAzureOpenAI
 from openai.resources.chat.completions import ChatCompletion
+
+from .conf import MODEL_CONFIGS
 from .context_dataset import ContextDataset
 from .query_context import QueryContext, QueryError
 from . import OPENAI_API_KEY
@@ -38,12 +40,7 @@ def get_ai_engine() -> "AiEngine":
         raise ValueError(f"{__name__} not initialized, call {__name__}.init first")
     return ai_engine
 
-def get_async_azure_openai_client() -> AsyncAzureOpenAI:
-    return AsyncAzureOpenAI(
-        azure_endpoint=AZURE_ENDPOINT,
-        api_key=OPENAI_API_KEY,
-        api_version=API_VERSION
-    )
+
 
 def create_message(system : str, history: list[dict[str, str]], query):
     messages = [{"role": "system", "content": system}]
@@ -53,37 +50,32 @@ def create_message(system : str, history: list[dict[str, str]], query):
     messages.append({"role": "user", "content": query})
     return messages
 
-CDB_EMBEDDING_SIZE = 1536
-CDB_EMBEDDING_MODEL = "text-embedding-3-small"
-CHROMADB_COLLECTION_NAME = f"{CDB_EMBEDDING_MODEL}-{CDB_EMBEDDING_SIZE}"
-AZURE_MODEL_TOKEN_LIMIT = 8193
-AZURE_ENDPOINT = "https://petljaopenaiservice.openai.azure.com"
-API_VERSION = "2024-06-01"
-MAX_HISTORY_LENGTH = 1
-RESPONSE_MAX_TOKENS = 2000
-PREPROCESS_QUERY_MAX_TOKENS = 1000
-LLM_MODEL = "gpt-35-turbo"
-LLM_EMBEDDING_MODEL = "text-embedding-ada-002"
+EMBEDDING_SIZE = 1536
+EMBEDDING_MODEL = "text-embedding-3-large"
+LLM_MODEL = "gpt-4o-mini"
+CDB_COLLECTION_NAME = f"{EMBEDDING_MODEL}-{EMBEDDING_SIZE}"
+
 
 class AiEngine:
     def __init__(self, base_url: str):
         logger.debug(f"ai_context_dir: {base_url}")
         self.ctx_data = ContextDataset(base_url)
         self.ch_cli = chromadb.Client()
-        self.encoding : Encoding = tiktoken.encoding_for_model(CDB_EMBEDDING_MODEL) 
+        self.encoding : Encoding = tiktoken.encoding_for_model(EMBEDDING_MODEL) 
         self._load_embeddings()
+        self._set_model_config(LLM_MODEL, EMBEDDING_MODEL)
 
     def _load_embeddings(self):
         collection = self.ch_cli.create_collection(
-            name=f"{CHROMADB_COLLECTION_NAME}",
+            name=f"{CDB_COLLECTION_NAME}",
             metadata={"hnsw:space": "ip"})
 
-        logger.debug(f"Loading embeddings {CDB_EMBEDDING_MODEL}-{CDB_EMBEDDING_SIZE}")
-        embeddings, ids, metadata = self.ctx_data.get_embeddings_data(CDB_EMBEDDING_MODEL, CDB_EMBEDDING_SIZE)
+        logger.debug(f"Loading embeddings {EMBEDDING_MODEL}-{EMBEDDING_SIZE}")
+        embeddings, ids, metadata = self.ctx_data.get_embeddings_data(EMBEDDING_MODEL, EMBEDDING_SIZE)
 
         max_batch_size = self.ch_cli.max_batch_size
         total_size = len(embeddings)
-        logger.debug(f"Indexing embeddings {CDB_EMBEDDING_MODEL}-{CDB_EMBEDDING_SIZE} in batches of {max_batch_size}")
+        logger.debug(f"Indexing embeddings {EMBEDDING_MODEL}-{EMBEDDING_SIZE} in batches of {max_batch_size}")
         for start_idx in range(0, total_size, max_batch_size):
             end_idx = min(start_idx + max_batch_size, total_size)
             
@@ -98,10 +90,34 @@ class AiEngine:
                 metadatas=batch_metadata
             )
 
-        logger.debug(f"Embeddings loaded and indexed {CDB_EMBEDDING_MODEL}-{CDB_EMBEDDING_SIZE}")
+        logger.debug(f"Embeddings loaded and indexed {EMBEDDING_MODEL}-{EMBEDDING_SIZE}")
 
-    async def _handle_query_submission(self, message: list[dict[str, str]], model: str, max_tokens: int, stream : bool) -> Union[str, Coroutine[Any, Any, ChatCompletion]]:
-        client = get_async_azure_openai_client()
+    def _set_model_config(self, llm: str, embedding_model: str):
+        self.llm_model_config = MODEL_CONFIGS.get(llm)
+        self.embedding_model_config = MODEL_CONFIGS.get(embedding_model)
+        if not self.llm_model_config or not self.embedding_model_config:
+            raise ValueError(f"Model {self.l} not found in MODEL_CONFIGS")
+
+    def get_async_azure_openai_client(self, type : str) -> AsyncAzureOpenAI:
+        if type == "llm":
+            return AsyncAzureOpenAI(
+                api_key=OPENAI_API_KEY,
+                azure_endpoint=self.llm_model_config["AZURE_ENDPOINT"],
+                azure_deployment=self.llm_model_config["AZURE_DEPLOYMENT_NAME"],
+                api_version=self.llm_model_config["API_VERSION"]
+            )
+        elif type == "embedding":
+            return AsyncAzureOpenAI(
+                api_key=OPENAI_API_KEY,
+                azure_endpoint=self.embedding_model_config["AZURE_ENDPOINT"],
+                azure_deployment=self.embedding_model_config["AZURE_DEPLOYMENT_NAME"],
+                api_version=self.embedding_model_config["API_VERSION"]
+            )
+        else:
+            raise ValueError(f"Invalid type {type}")
+
+    async def _handle_query_submission(self, message: list[dict[str, str]], max_tokens: int, stream : bool) -> Union[str, Coroutine[Any, Any, ChatCompletion]]:
+        client = self.get_async_azure_openai_client("llm")
 
         def encode_message_content(message: list[dict[str, str]]) -> int:
             total_length = 0
@@ -109,15 +125,17 @@ class AiEngine:
                 total_length += len(self.encoding.encode(msg["content"]))
             return total_length
         
-        if encode_message_content(message) > AZURE_MODEL_TOKEN_LIMIT - RESPONSE_MAX_TOKENS:
+        token_limit = self.llm_model_config["CONTEXT_SIZE"] 
+
+        if encode_message_content(message) > token_limit - max_tokens:
             raise QueryError((
                 f"Context too large for model. Tokens used: {encode_message_content(message)}",
-                f"Response tokens: {RESPONSE_MAX_TOKENS}",
-                f"Model token limit: {AZURE_MODEL_TOKEN_LIMIT}"
+                f"Response tokens: {max_tokens}",
+                f"Model token limit: {token_limit}"
             ))
 
         completion = await client.chat.completions.create(
-            model=model,
+            model=self.embedding_model_config["LLM_MODEL"],
             messages=message,
             stream=stream,
             max_tokens=max_tokens,
@@ -128,16 +146,16 @@ class AiEngine:
             return completion
         else:
             return completion.choices[0].message.content
-    
+        
 
-    async def _create_embedding(self, model: str, input: str, encoding_format: str, dimensions: int) -> str:
-        client = get_async_azure_openai_client()
+    async def _create_embedding(self, input: str, encoding_format: str, dimensions: int) -> str:
+        client = self.get_async_azure_openai_client("embedding")
 
-        if len(self.encoding.encode(input)) > AZURE_MODEL_TOKEN_LIMIT:
+        if len(self.encoding.encode(input)) > self.embedding_model_config["CONTEXT_SIZE"]:
             raise QueryError(f"Embedding input too large for model. Tokens used: {len(self.encoding.encode(input))}\nModel token limit: {AZURE_MODEL_TOKEN_LIMIT}")
     
         response = await client.embeddings.create(
-            model=model,
+            model=self.embedding_model_config["LLM_MODEL"],
             input=input,
             encoding_format=encoding_format,
             dimensions=dimensions
@@ -170,8 +188,7 @@ class AiEngine:
 
         response = await self._handle_query_submission(
             message= messages,
-            model= LLM_MODEL,
-            max_tokens= PREPROCESS_QUERY_MAX_TOKENS,
+            max_tokens= 1000,
             stream= False)
 
         preprocessed_user_message = query + '\n' + response
@@ -193,7 +210,7 @@ class AiEngine:
 
         if condensed_history:
             condensed_segment = system_message_condensed_history_template.format(condensed_history=condensed_history)
-            history = history[-MAX_HISTORY_LENGTH:]
+            history = [history.pop()]
         else:
             condensed_segment = ""
 
@@ -201,13 +218,12 @@ class AiEngine:
         logger.debug(f"Query after elaboration: {preprocessed_query}")
 
         query_embedding = await self._create_embedding(
-            model=LLM_EMBEDDING_MODEL,
             input=preprocessed_query,
             encoding_format="float",
-            dimensions=CDB_EMBEDDING_SIZE
+            dimensions=EMBEDDING_SIZE
         )
 
-        collection = self.ch_cli.get_collection(CHROMADB_COLLECTION_NAME)
+        collection = self.ch_cli.get_collection(CDB_COLLECTION_NAME)
 
         result =collection.query(
             query_embeddings=[query_embedding],
@@ -253,7 +269,7 @@ class AiEngine:
         query_context = QueryContext()
 
         if condensed_history:
-            history = history[-MAX_HISTORY_LENGTH:]
+            history = [history.pop()]
             
         system_message = await self.make_system_message(history, query, course_key, activity_key, condensed_history, query_context)
         
@@ -265,8 +281,7 @@ class AiEngine:
 
         response = await self._handle_query_submission(
             message= messages,
-            model= LLM_MODEL,
-            max_tokens= RESPONSE_MAX_TOKENS, 
+            max_tokens= 2000, 
             stream=True)
     
         async def answer_generator():
@@ -307,8 +322,7 @@ class AiEngine:
 
         response = await self._handle_query_submission(
             message=messages, 
-            model=LLM_MODEL, 
-            max_tokens=RESPONSE_MAX_TOKENS, 
+            max_tokens= 1000, 
             stream=False)
         logger.debug(f"condensed_history: {response}")
 
@@ -327,7 +341,6 @@ class AiEngine:
 
         response = await self._handle_query_submission(
             message=messages,
-            model= LLM_MODEL,
             max_tokens= 50, 
             stream=False)
 
