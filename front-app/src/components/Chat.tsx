@@ -36,6 +36,7 @@ export function Chat() {
     const [lessonList, setLessonList] = useState<{key: string; title: string}[]>([{key: '-', title: '---'}]);
     const [activitiyKey, setActivityKey] = useState<string>("-");
     const [activityList, setActivityList] = useState<{key: string; title: string}[]>([{key: '-', title: '---'}]);
+    const [model, setModel] = useState<string>("gpt-4o-mini");
 
     async function handleCourseChange() {
         const r_lessons = await fetch(
@@ -94,7 +95,8 @@ export function Chat() {
             "question": question,
             "accessKey": context?.accessKey ?? "default",
             "condensedHistory": condensedHistory,
-            "contextAttributes": {"activity_key": activitiyKey, "course_key": courseKey}
+            "contextAttributes": {"activity_key": activitiyKey, "course_key": courseKey},
+            "model": model
         };
         const r = await fetch(
             "../api/chat",
@@ -215,6 +217,11 @@ export function Chat() {
                 <br />
                 <select className="form-select" value={activitiyKey} onChange={(e) => setActivityKey(e.target.value)}>
                     {activityList.map((c, i) => <option key={i} value={c.key}>{c.title}</option>)}
+                </select>
+                <br />
+                <select className="form-select" value={model} onChange={(e) => setModel(e.target.value)}>
+                    <option value="gpt-4o">gpt-4o</option>
+                    <option value="gpt-4o-mini">gpt-4o-mini</option>
                 </select>
                 <br />
                 <MainContainer responsive>

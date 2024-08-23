@@ -6,7 +6,8 @@ from typing import Optional, Tuple
 from markdown_it import MarkdownIt
 from pydantic import BaseModel
 
-from ..ai.engine import AiEngine, QueryContext, get_ai_engine
+from ..ai.engine import AiEngine, QueryContext, get_ai_engine, CHAT_MODEL
+from ..ai.conf import MODEL_CONFIGS
 from ..ioutils import read_json, write_json, read_str, write_str
 
 CONVERSATION_DIR = "plct_server/eval/conversations/default"
@@ -17,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 class Conversation(BaseModel):
     history: list[tuple[str, str]]
-    condensed_history : Optional[str] = None
+    condensed_history : Optional[str] = ""
     query: str
     response: str
     benchmark_response: str
@@ -26,6 +27,7 @@ class Conversation(BaseModel):
     feedback: Optional[int] = None
     ai_assessment: Optional[int] = None
     query_context: Optional[QueryContext]= None
+    model : Optional[str] = CHAT_MODEL
 
     def transform_markdown(self):
         md = MarkdownIt()
@@ -45,7 +47,8 @@ async def run_test_case(ai_engine: AiEngine, test_case: Conversation) -> Tuple[s
         query=test_case.query,
         course_key=test_case.course_key,
         activity_key=test_case.activity_key,
-        condensed_history = test_case.condensed_history or ""
+        condensed_history = test_case.condensed_history,
+        model_name= test_case.model if MODEL_CONFIGS.get(test_case.model) else CHAT_MODEL
     )
     
     answer = ""

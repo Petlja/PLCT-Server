@@ -8,7 +8,7 @@ from typing import Any, AsyncIterator, Coroutine, Union
 from openai import AsyncAzureOpenAI
 from openai.resources.chat.completions import ChatCompletion
 
-from .conf import MODEL_CONFIGS
+from .conf import MODEL_CONFIGS, ModelConfig
 from .context_dataset import ContextDataset
 from .query_context import QueryContext, QueryError
 from . import OPENAI_API_KEY
@@ -40,7 +40,14 @@ def get_ai_engine() -> "AiEngine":
         raise ValueError(f"{__name__} not initialized, call {__name__}.init first")
     return ai_engine
 
-
+def get_async_azure_openai_client(config: ModelConfig) -> AsyncAzureOpenAI:
+    logger.debug(f"Creating Azure OpenAI client for model {config.name}")
+    return AsyncAzureOpenAI(
+        api_key=OPENAI_API_KEY,
+        azure_endpoint=config.azure_endpoint,
+        azure_deployment=config.azure_deployment_name,
+        api_version=config.api_version
+    )
 
 def create_message(system : str, history: list[dict[str, str]], query):
     messages = [{"role": "system", "content": system}]
@@ -50,9 +57,9 @@ def create_message(system : str, history: list[dict[str, str]], query):
     messages.append({"role": "user", "content": query})
     return messages
 
-EMBEDDING_SIZE = 1536
+CHAT_MODEL = "gpt-4o-mini"
 EMBEDDING_MODEL = "text-embedding-3-large"
-LLM_MODEL = "gpt-4o-mini"
+EMBEDDING_SIZE = 1536
 CDB_COLLECTION_NAME = f"{EMBEDDING_MODEL}-{EMBEDDING_SIZE}"
 
 
@@ -63,7 +70,8 @@ class AiEngine:
         self.ch_cli = chromadb.Client()
         self.encoding : Encoding = tiktoken.encoding_for_model(EMBEDDING_MODEL) 
         self._load_embeddings()
-        self._set_model_config(LLM_MODEL, EMBEDDING_MODEL)
+        self.default_chat_config = CHAT_MODEL
+        self.default_embedding_config = EMBEDDING_MODEL
 
     def _load_embeddings(self):
         collection = self.ch_cli.create_collection(
@@ -92,32 +100,19 @@ class AiEngine:
 
         logger.debug(f"Embeddings loaded and indexed {EMBEDDING_MODEL}-{EMBEDDING_SIZE}")
 
-    def _set_model_config(self, llm: str, embedding_model: str):
-        self.llm_model_config = MODEL_CONFIGS.get(llm)
-        self.embedding_model_config = MODEL_CONFIGS.get(embedding_model)
-        if not self.llm_model_config or not self.embedding_model_config:
-            raise ValueError(f"Model {self.l} not found in MODEL_CONFIGS")
-
-    def get_async_azure_openai_client(self, type : str) -> AsyncAzureOpenAI:
-        if type == "llm":
-            return AsyncAzureOpenAI(
-                api_key=OPENAI_API_KEY,
-                azure_endpoint=self.llm_model_config["AZURE_ENDPOINT"],
-                azure_deployment=self.llm_model_config["AZURE_DEPLOYMENT_NAME"],
-                api_version=self.llm_model_config["API_VERSION"]
-            )
-        elif type == "embedding":
-            return AsyncAzureOpenAI(
-                api_key=OPENAI_API_KEY,
-                azure_endpoint=self.embedding_model_config["AZURE_ENDPOINT"],
-                azure_deployment=self.embedding_model_config["AZURE_DEPLOYMENT_NAME"],
-                api_version=self.embedding_model_config["API_VERSION"]
-            )
-        else:
-            raise ValueError(f"Invalid type {type}")
-
-    async def _handle_query_submission(self, message: list[dict[str, str]], max_tokens: int, stream : bool) -> Union[str, Coroutine[Any, Any, ChatCompletion]]:
-        client = self.get_async_azure_openai_client("llm")
+    def _get_model_config(self, model_name: str) -> ModelConfig:
+        conf = MODEL_CONFIGS.get(model_name)
+        if not conf:
+            raise ValueError(f"Model configuration for {model_name} not found")
+        return conf
+    
+    async def _handle_query_submission(self, message: list[dict[str, str]], max_tokens: int, stream : bool,
+                                        model_name : str = None) -> Union[str, Coroutine[Any, Any, ChatCompletion]]:
+        model = model_name or self.default_chat_config
+        config = self._get_model_config(model)
+        client = get_async_azure_openai_client(
+            config = config
+        )
 
         def encode_message_content(message: list[dict[str, str]]) -> int:
             total_length = 0
@@ -125,7 +120,7 @@ class AiEngine:
                 total_length += len(self.encoding.encode(msg["content"]))
             return total_length
         
-        token_limit = self.llm_model_config["CONTEXT_SIZE"] 
+        token_limit = config.context_size
 
         if encode_message_content(message) > token_limit - max_tokens:
             raise QueryError((
@@ -135,7 +130,7 @@ class AiEngine:
             ))
 
         completion = await client.chat.completions.create(
-            model=self.embedding_model_config["LLM_MODEL"],
+            model=config.name,
             messages=message,
             stream=stream,
             max_tokens=max_tokens,
@@ -149,9 +144,12 @@ class AiEngine:
         
 
     async def _create_embedding(self, input: str, encoding_format: str, dimensions: int) -> str:
-        client = self.get_async_azure_openai_client("embedding")
+        config = self._get_model_config(self.default_embedding_config)
+        client = get_async_azure_openai_client(
+            config = config
+        )
 
-        token_limit = self.embedding_model_config["CONTEXT_SIZE"]
+        token_limit = config.context_size
 
         if len(self.encoding.encode(input)) > token_limit:
             raise QueryError((
@@ -159,7 +157,7 @@ class AiEngine:
                 f"Model token limit: {token_limit}"))
     
         response = await client.embeddings.create(
-            model=self.embedding_model_config["LLM_MODEL"],
+            model=config.name,
             input=input,
             encoding_format=encoding_format,
             dimensions=dimensions
@@ -269,7 +267,7 @@ class AiEngine:
         return system_message
 
     async def generate_answer(self,*, history: list[tuple[str,str]], query: str,
-                            course_key: str, activity_key: str, condensed_history: str) -> tuple[AsyncIterator[int], QueryContext]:
+                            course_key: str, activity_key: str, condensed_history: str, model_name) -> tuple[AsyncIterator[int], QueryContext]:
         query_context = QueryContext()
 
         if condensed_history:
@@ -286,7 +284,8 @@ class AiEngine:
         response = await self._handle_query_submission(
             message= messages,
             max_tokens= 2000, 
-            stream=True)
+            stream=True,
+            model_name=model_name)
     
         async def answer_generator():
             async for chunk in response:

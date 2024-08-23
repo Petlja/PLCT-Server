@@ -24,6 +24,7 @@ class ChatInput(BaseModel):
     question: str = ""
     accessKey: str = ""
     condensedHistory: str = "" 
+    model : str = ""
     contextAttributes: dict[str,str] = {}
 
 async def stream_response(answer, condensed_history) -> AsyncGenerator[bytes, None]:
@@ -62,7 +63,8 @@ async def post_question(response: Response, input: ChatInput) -> Response:
             query=input.question, 
             course_key=course_key, 
             activity_key=activity_key, 
-            condensed_history=input.condensedHistory)  
+            condensed_history=input.condensedHistory,
+            model_name=input.model)  
         
         new_condensed_history = await ai_engine.generate_condensed_history(
             history=history, 
