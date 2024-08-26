@@ -11,12 +11,13 @@ from openai.resources.chat.completions import ChatCompletion
 from .conf import MODEL_CONFIGS, ModelConfig
 from .context_dataset import ContextDataset
 from .query_context import QueryContext, QueryError
+from .structured_outputs.query_classification import TOOLS_CHOICE_DEF, TOOLS_DEF, Answer, QueryClassification, parse_query_classification
 from . import OPENAI_API_KEY
 
 from .prompt_templates import ( 
     preprocess_system_message_template, system_message_template, 
     system_message_summary_template, system_message_rag_template,
-    preprocess_user_message_template, system_message_condensed_history_template,
+    system_message_condensed_history_template,
     compare_prompt, system_compare_template, condensed_history_template,
     new_condensed_history_template, condensed_history_template,
     preprocess_system_message_template_with_history, condensed_history_system)
@@ -164,8 +165,15 @@ class AiEngine:
         )
         return response.data[0].embedding
 
-    async def preprocess_query(self, history: list[tuple[str,str]], query: str, course_key: str, activity_key: str, condensed_history: str) -> str:
-      
+    async def preprocess_query(self,query: str, history: list[dict[str, str]], course_key: str, 
+                               activity_key: str, condensed_history: str, model_name : str = None) -> QueryClassification:
+        
+        model = model_name or self.default_chat_config
+        config = self._get_model_config(model)
+        client = get_async_azure_openai_client(
+            config = config
+        )
+
         course_summary, lesson_summary = self.ctx_data.get_summary_texts(
             course_key, activity_key)
         
@@ -181,21 +189,53 @@ class AiEngine:
                 lesson_summary=lesson_summary,
             ) 
 
-
-        preprocessed_user_message = preprocess_user_message_template.format(
-            user_input=query
+        messages = create_message(system_message, history, query)  
+        tools = TOOLS_DEF
+        tools_choice = TOOLS_CHOICE_DEF
+        response = await client.chat.completions.create(
+            model=config.name,
+            messages= messages,
+            max_tokens= 1000,
+            tools=tools,
+            tool_choice = tools_choice
+        )
+        return parse_query_classification(response)
+        
+    def _get_rag_segment(self, structured_output: QueryClassification, query_embedding: str,
+                          course_key: str, activity_key: str) -> tuple[str, list[dict[str, str]]]:
+        
+        collection = self.ch_cli.get_collection(CDB_COLLECTION_NAME)
+        where = {"activity_key": activity_key} if structured_output.refers_to_lecture == Answer.YES else {"course_key": course_key}
+        n_results = 10 if structured_output.refers_to_lecture == Answer.YES else 2
+        logger.debug(f"where: {where}.\nn_results: {n_results}")
+        result = collection.query(
+            query_embeddings=[query_embedding],
+            where= where,
+            n_results=n_results
         )
 
-        messages = create_message(system_message, history, query)  
 
-        response = await self._handle_query_submission(
-            message= messages,
-            max_tokens= 1000,
-            stream= False)
+        chunk_strs : list[str, str] = []
+        chunk_metadata : list[dict[str, str]] = []
+        chunk_hash : str
+        dist : float
+        metadata : dict[str, str]
 
-        preprocessed_user_message = query + '\n' + response
-        logger.debug(f"preprocessed_query: {preprocessed_user_message}")
-        return preprocessed_user_message
+        for chunk_hash, dist, metadata in zip(result["ids"][0], result["distances"][0], result["metadatas"][0]):
+            metadata["distance"] = str(dist)
+            chunk_metadata.append(metadata)
+            chunk_str = self.ctx_data.get_chunk_text(chunk_hash)
+            chunk_strs.append(chunk_str)
+
+
+        logger.debug(f"chunk_metadata: {chunk_metadata}")
+
+        rag_segment = system_message_rag_template.format(
+            chunks='\n\n'.join(chunk_strs)
+        )
+
+        return rag_segment, chunk_metadata
+
     
     async def make_system_message(self, history: list[tuple[str,str]], query: str,
                                    course_key: str, activity_key: str, condensed_history: str, query_context : QueryContext = None) -> str:
@@ -216,38 +256,27 @@ class AiEngine:
         else:
             condensed_segment = ""
 
-        preprocessed_query = await self.preprocess_query(history, query, course_key, activity_key, condensed_history)
-        logger.debug(f"Query after elaboration: {preprocessed_query}")
+        structured_output = await self.preprocess_query(
+            query=query,
+            history=history,
+            course_key=course_key,
+            activity_key=activity_key,
+            condensed_history=condensed_history
+        )
+
+        logger.debug(f"structured_output: {structured_output}")
 
         query_embedding = await self._create_embedding(
-            input=preprocessed_query,
+            input=structured_output.restated_question  or query,
             encoding_format="float",
             dimensions=EMBEDDING_SIZE
         )
 
-        collection = self.ch_cli.get_collection(CDB_COLLECTION_NAME)
-
-        result =collection.query(
-            query_embeddings=[query_embedding],
-            where={"course_key": course_key},
-            n_results=2)
-
-        chunk_strs : list[str, str] = []
-        chunk_metadata : list[dict[str, str]] = []
-        chunk_hash : str
-        dist : float
-        metadata : dict[str, str]
-        for chunk_hash, dist, metadata in zip(result["ids"][0], result["distances"][0], result["metadatas"][0]):
-            metadata["distance"] = str(dist)
-            chunk_metadata.append(metadata)
-            chunk_str = self.ctx_data.get_chunk_text(chunk_hash)
-            chunk_strs.append(chunk_str)
-
-
-        logger.debug(f"chunk_metadata: {chunk_metadata}")
-
-        rag_segment = system_message_rag_template.format(
-            chunks='\n\n'.join(chunk_strs)
+        rag_segment, chunk_metadata = self._get_rag_segment(
+            structured_output=structured_output,
+            query_embedding=query_embedding,
+            course_key=course_key,
+            activity_key=activity_key
         )
 
         system_message = system_message_template + summary_segment + condensed_segment + rag_segment

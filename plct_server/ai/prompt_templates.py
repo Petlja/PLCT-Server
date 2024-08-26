@@ -27,9 +27,6 @@ preprocess_system_message_template = (
     "Always answer in the language of the question.\n\n"
 )
 
-preprocess_user_message_template = (
-    "Help me to elaborate the following request in more detail:\n\n{user_input}")
-
 system_message_template = (
     "Format output with Markdown.\n\n"
     "When appropriate, provide example of code with explanation.\n\n"
