@@ -66,7 +66,7 @@ class ContextDatasetBuilder:
 
     def add_chunck(self, chunk_text: str, chunk_meta: ChunkMetadata, 
                      embeding_model:str, embeding_sizes: list[int]):
-        str_for_hash = "\n".join([chunk_meta.course_key, chunk_text])
+        str_for_hash = "\n".join([chunk_meta.course_key, chunk_text]).encode('utf-8')
         chunk_hash = hashlib.sha256(str_for_hash).hexdigest()
         logger.info(f"Hash: {chunk_hash}, TextLengt: {len(chunk_text)}")
         hash_prefix = chunk_hash[:2]
