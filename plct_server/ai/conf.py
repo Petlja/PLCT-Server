@@ -19,14 +19,6 @@ MODEL_CONFIGS = {
         type = "chat",
         context_size=128_000
     ),
-    "text-embedding-3-large": ModelConfig(
-        name="text-embedding-3-large",
-        azure_deployment_name="text-embedding-3-large",
-        azure_endpoint=AZURE_ENDPOINT,
-        api_version="2023-05-15",
-        type = "embedding",
-        context_size=8_191
-    ),
     "gpt-4o": ModelConfig(
         name="gpt-4o",
         azure_deployment_name="gpt-4o",
@@ -34,5 +26,13 @@ MODEL_CONFIGS = {
         api_version="2024-02-15-preview",
         type = "chat",
         context_size=128_000
+    ),
+    "text-embedding-3-large": ModelConfig(
+        name="text-embedding-3-large",
+        azure_deployment_name="text-embedding-3-large",
+        azure_endpoint=AZURE_ENDPOINT,
+        api_version="2023-05-15",
+        type = "embedding",
+        context_size=8_191
     )
 }

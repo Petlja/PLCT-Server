@@ -11,16 +11,10 @@ from openai.resources.chat.completions import ChatCompletion
 from .conf import MODEL_CONFIGS, ModelConfig
 from .context_dataset import ContextDataset
 from .query_context import QueryContext, QueryError
-from .structured_outputs.query_classification import TOOLS_CHOICE_DEF, TOOLS_DEF, Answer, QueryClassification, parse_query_classification
+from .structured_outputs.query_classification import TOOLS_CHOICE_DEF, TOOLS_DEF, Classification, QueryClassification, parse_query_classification
 from . import OPENAI_API_KEY
 
-from .prompt_templates import ( 
-    preprocess_system_message_template, system_message_template, 
-    system_message_summary_template, system_message_rag_template,
-    system_message_condensed_history_template,
-    compare_prompt, system_compare_template, condensed_history_template,
-    new_condensed_history_template, condensed_history_template,
-    preprocess_system_message_template_with_history, condensed_history_system)
+from .prompt_templates import *
 
     
 logger = logging.getLogger(__name__)
@@ -62,6 +56,7 @@ CHAT_MODEL = "gpt-4o-mini"
 EMBEDDING_MODEL = "text-embedding-3-large"
 EMBEDDING_SIZE = 1536
 CDB_COLLECTION_NAME = f"{EMBEDDING_MODEL}-{EMBEDDING_SIZE}"
+PETLJA_DOCS_COURSE_KEY = "petlja-docs"
 
 
 class AiEngine:
@@ -164,6 +159,61 @@ class AiEngine:
             dimensions=dimensions
         )
         return response.data[0].embedding
+    
+    def _generate_chroma_filter(self, structured_output: QueryClassification, course_key: str, activity_key: str) -> tuple[Classification, dict[str, str], int]:
+        if structured_output.classification == Classification.COURSE:
+            where = {"course_key": course_key}
+            n_results = 2
+        elif structured_output.classification == Classification.CURRENT_LECTURE:
+            where = {"$and": [{"course_key": course_key}, {"activity_key": activity_key}]}
+            n_results = 10
+        elif structured_output.classification == Classification.PLATFORM:
+            where = {"course_key": PETLJA_DOCS_COURSE_KEY}
+            n_results = 2
+        else:
+            where = {}
+            n_results = 0
+        return where, n_results
+        
+    def _get_rag_segment(self, structured_output: QueryClassification, query_embedding: str,
+                          course_key: str, activity_key: str) -> tuple[str, list[dict[str, str]]]:
+        
+        collection = self.ch_cli.get_collection(CDB_COLLECTION_NAME)
+
+        where, n_results = self._generate_chroma_filter(structured_output, course_key, activity_key)
+
+        logger.debug(f"Classification: {structured_output.classification}")
+
+        if structured_output.classification == Classification.UNSURE:
+            return "", []
+
+        result = collection.query(
+            query_embeddings=[query_embedding],
+            where= where,
+            n_results=n_results
+        )
+
+
+        chunk_strs : list[str, str] = []
+        chunk_metadata : list[dict[str, str]] = []
+        chunk_hash : str
+        dist : float
+        metadata : dict[str, str]
+
+        for chunk_hash, dist, metadata in zip(result["ids"][0], result["distances"][0], result["metadatas"][0]):
+            metadata["distance"] = str(dist)
+            chunk_metadata.append(metadata)
+            chunk_str = self.ctx_data.get_chunk_text(chunk_hash)
+            chunk_strs.append(chunk_str)
+
+
+        logger.debug(f"chunk_metadata: {chunk_metadata}")
+
+        rag_segment = system_message_rag_template.format(
+            chunks='\n\n'.join(chunk_strs)
+        )
+
+        return rag_segment, chunk_metadata
 
     async def preprocess_query(self,query: str, history: list[dict[str, str]], course_key: str, 
                                activity_key: str, condensed_history: str, model_name : str = None) -> QueryClassification:
@@ -200,61 +250,16 @@ class AiEngine:
             tool_choice = tools_choice
         )
         return parse_query_classification(response)
-        
-    def _get_rag_segment(self, structured_output: QueryClassification, query_embedding: str,
-                          course_key: str, activity_key: str) -> tuple[str, list[dict[str, str]]]:
-        
-        collection = self.ch_cli.get_collection(CDB_COLLECTION_NAME)
-        where = {"activity_key": activity_key} if structured_output.refers_to_lecture == Answer.YES else {"course_key": course_key}
-        n_results = 10 if structured_output.refers_to_lecture == Answer.YES else 2
-        logger.debug(f"where: {where}.\nn_results: {n_results}")
-        result = collection.query(
-            query_embeddings=[query_embedding],
-            where= where,
-            n_results=n_results
-        )
-
-
-        chunk_strs : list[str, str] = []
-        chunk_metadata : list[dict[str, str]] = []
-        chunk_hash : str
-        dist : float
-        metadata : dict[str, str]
-
-        for chunk_hash, dist, metadata in zip(result["ids"][0], result["distances"][0], result["metadatas"][0]):
-            metadata["distance"] = str(dist)
-            chunk_metadata.append(metadata)
-            chunk_str = self.ctx_data.get_chunk_text(chunk_hash)
-            chunk_strs.append(chunk_str)
-
-
-        logger.debug(f"chunk_metadata: {chunk_metadata}")
-
-        rag_segment = system_message_rag_template.format(
-            chunks='\n\n'.join(chunk_strs)
-        )
-
-        return rag_segment, chunk_metadata
-
+    
     
     async def make_system_message(self, history: list[tuple[str,str]], query: str,
                                    course_key: str, activity_key: str, condensed_history: str, query_context : QueryContext = None) -> str:
-                
-        course_summary, lesson_summary = self.ctx_data.get_summary_texts(course_key, activity_key)
-
-        if course_summary is None or lesson_summary is None:
-            summary_segment = ""
-        else:
-            summary_segment = system_message_summary_template.format(
-                course_summary=course_summary,
-                lesson_summary=lesson_summary
-            )
-
+            
         if condensed_history:
-            condensed_segment = system_message_condensed_history_template.format(condensed_history=condensed_history)
+            condensed_history_segment = system_message_condensed_history_template.format(condensed_history=condensed_history)
             history = [history.pop()]
         else:
-            condensed_segment = ""
+            condensed_history_segment = ""
 
         structured_output = await self.preprocess_query(
             query=query,
@@ -279,14 +284,31 @@ class AiEngine:
             activity_key=activity_key
         )
 
-        system_message = system_message_template + summary_segment + condensed_segment + rag_segment
+        course_summary, lesson_summary = self.ctx_data.get_summary_texts(course_key, activity_key)
+
+        if structured_output.classification == Classification.COURSE:
+            summary_segment = system_message_summary_template_course.format(
+                course_summary=course_summary,
+            )         
+        if structured_output.classification == Classification.CURRENT_LECTURE:
+            summary_segment =  system_message_summary_template_lesson
+
+        if structured_output.classification == Classification.PLATFORM:
+            summary_segment = system_message_summary_template_platform
+        
+        if structured_output.classification == Classification.UNSURE:
+            summary_segment =  system_message_summary_template_unsure.format(
+                course_summary=course_summary,
+                lesson_summary=lesson_summary
+            )
+        system_message = system_message_template + summary_segment + condensed_history_segment + rag_segment
 
         if query_context:
             query_context.add_system_message_parts(
                 [
                     {"name": "system_message_template", "message": system_message},
                     {"name": "summary_segment", "message": summary_segment},
-                    {"name": "condensed_segment", "message": condensed_segment},
+                    {"name": "condensed_segment", "message": condensed_history_segment},
                     {"name": "rag_segment", "message": rag_segment}
                 ],
                 self.encoding

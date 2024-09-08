@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 TOOLS_CHOICE_DEF : dict[str, object] = {
     "type": "function",
     "function": {
-        "name": "text_classification",
+        "name": "question_classification",
     }
 }
 
@@ -20,38 +20,46 @@ TOOLS_DEF : list[dict[str, object]] = [
             "type": "function",
             "strict": True,
             "function": {
-                "name": "text_classification",
+                "name": "question_classification",
                 "description": "Restates the question and classifies it.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "restated_question": {
                             "type": "string",
-                            "description": "The restated question, elaborated by the model."},
-                        "refers_to_course": {
+                            "description": "The restated question, elaborated by the model."
+                        },
+                        "classify_query": {
                             "type": "string", 
-                            "enum": ["yes", "no", "unsure"],
-                            "description": "Does the question refer to the course?"},
-                        "refers_to_lecture": {
-                            "type": "string", 
-                            "enum": ["yes", "no", "unsure"],
-                            "description": "Does the question refer to the lecture? If the question refers to a task or a question it is most likely a lecture question."}
-                    },
-                    "required": ["restated_question", "refers_to_course", "refers_to_lecture"], 
+                            "enum": ["course", "current_lecture", "platform", "unsure"],
+                            "description": 
+                            """
+                            Classify the user question as referring to a course, the current lecture, the platform, or unsure.
+                            The `course` classification is used when the question is about the course in general.
+
+                            The `current_lecture` classification is used when the question is about the current lecture.
+
+                            The `platform` classification is used when the question is about the petlja.org platform where the course is hosted.
+
+                            The `unsure` classification is used when the model is unsure about the classification.
+                            """
+                        },
+                   },
+                    "required": ["restated_question", "classify_query"], 
                     "additionalProperties" : False
                 },
             },
         }
     ]
 
-class Answer(Enum):
-    YES = "yes"
-    NO = "no"
+class Classification(Enum):
+    COURSE = "course"
+    CURRENT_LECTURE = "current_lecture"
+    PLATFORM = "platform"
     UNSURE = "unsure"
 
 class QueryClassification(BaseModel):
-    refers_to_course: Answer
-    refers_to_lecture: Answer
+    classification: Classification
     restated_question: str
 
 class QueryClassificationError(Exception):
@@ -70,9 +78,8 @@ def parse_query_classification(response):
             arguments_dict = json.loads(arguments_json)
 
             return QueryClassification(
-                refers_to_course=arguments_dict.get("refers_to_course", Answer.UNSURE),
-                refers_to_lecture=arguments_dict.get("refers_to_lecture", Answer.UNSURE),
-                restated_question=arguments_dict.get("restated_question", None)
+                restated_question=arguments_dict.get("restated_question", None),
+                classification=Classification(arguments_dict.get("classify_query", "unsure"))
             )
 
         raise QueryClassificationError(f"Unexpected finish reason: {finish_reason}")
@@ -80,9 +87,8 @@ def parse_query_classification(response):
     except Exception as e:
         logger.error(f"Error parsing query classification: {e}")
         return QueryClassification(
-            refers_to_course=Answer.UNSURE,
-            refers_to_lecture=Answer.UNSURE,
-            restated_question=None
+            restated_question=None,
+            classification=Classification.UNSURE
         )
 
     
