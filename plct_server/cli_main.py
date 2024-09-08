@@ -38,20 +38,21 @@ def serve(folders: tuple[str], host: str, port: int, verbose:bool, ai_context:st
 @click.option("-v", "--verbose", is_flag=True, help="Enable verbose logging")
 @click.option("-c", "--compare-with-ai", is_flag=True, help="Compare responses with AI")
 @click.option("-d", "--conversation-dir", type = click.Path(exists=True, file_okay=False, dir_okay=True),default=CONVERSATION_DIR, help="Directory holding pre-arranged conversations")
-def batch_review(ai_context:str, batch_name:str, set_benchmark: bool, verbose, compare_with_ai: bool, conversation_dir: str) -> None:
+@click.option("-m", "--model", default ="gpt-4o" ,help="default model to use")
+def batch_review(ai_context:str, batch_name:str, set_benchmark: bool, verbose, compare_with_ai: bool, conversation_dir: str, model : str) -> None:
     import platform
     if platform.system()=='Windows':
        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     
-    asyncio.run(batch_review_async(ai_context, batch_name, set_benchmark, verbose, compare_with_ai, conversation_dir))
+    asyncio.run(batch_review_async(ai_context, batch_name, set_benchmark, verbose, compare_with_ai, conversation_dir, model))
     
-async def batch_review_async(ai_context:str, batch_name:str, set_benchmark: bool, verbose, compare_with_ai: bool, conversation_dir: str):
+async def batch_review_async(ai_context:str, batch_name:str, set_benchmark: bool, verbose, compare_with_ai: bool, conversation_dir: str, model : str):
     server.configure(
         ai_ctx_url = ai_context,
         verbose =  verbose)
       
     logger.info("Starting batch review of conversations")
-    await batch_prompt_conversations(conversation_dir = conversation_dir, batch_name=batch_name, set_benchmark=set_benchmark)
+    await batch_prompt_conversations(conversation_dir = conversation_dir, batch_name=batch_name, set_benchmark=set_benchmark, model = model)
 
     if not set_benchmark:
         logger.info("Generating HTML report")
