@@ -27,9 +27,10 @@ class ChatInput(BaseModel):
     model : str = ""
     contextAttributes: dict[str,str] = {}
 
-async def stream_response(answer, condensed_history) -> AsyncGenerator[bytes, None]:
+async def stream_response(answer, condensed_history, followup_questions) -> AsyncGenerator[bytes, None]:
     metadata = {
-        "condensed_history": condensed_history
+        "condensed_history": condensed_history,
+        "followup_questions": followup_questions
     }
 
     yield json.dumps(metadata).encode('utf-8') + b'\n'
@@ -58,7 +59,7 @@ async def post_question(response: Response, input: ChatInput) -> Response:
 
     ai_engine = get_ai_engine()
     try:           
-        generated_answer, _ = await ai_engine.generate_answer(
+        generated_answer, followup_questions, _ = await ai_engine.generate_answer(
             history=history, 
             query=input.question, 
             course_key=course_key, 
@@ -73,7 +74,8 @@ async def post_question(response: Response, input: ChatInput) -> Response:
         return StreamingResponse(
             stream_response(
                 generated_answer,
-                new_condensed_history),
+                new_condensed_history,
+                followup_questions),
             media_type="text/plain")
     
     except QueryError as e:

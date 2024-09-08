@@ -44,8 +44,38 @@ TOOLS_DEF : list[dict[str, object]] = [
                             The `unsure` classification is used when the model is unsure about the classification.
                             """
                         },
+                        "possible_conversation_continuation": {
+                            "type": "object",
+                            "properties": {
+                                "continuation_1": {
+                                    "type": "string",
+                                    "description": "The first follow-up ask or question."
+                                },
+                                "continuation_2": {
+                                    "type": "string",
+                                    "description": "The second follow-up ask or question."
+                                }
+                            },
+                            "required": ["continuation_1", "continuation_2"],
+                            "description": """
+                            Two follow-up suggestions that the user can click to have the assistant perform the action on their behalf.
+                            Take into account history and avoid repeating the same suggestions.
+
+                            These suggestions should be **concise and actionable**—representing things the assistant can do for the user (like generating content or performing tasks).
+
+                            Focus on providing clear, **action-oriented commands** the assistant can execute directly when clicked.
+                            Example:
+                            - Generisi kviz za lekciju.
+                            - Pripremi zadatak za domaći.
+
+                            **Avoid verbose descriptions or questions.** The suggestions should be brief and phrased as direct actions.
+                            
+                            Always answer in the language of the question.
+                            """
+                        }
+
                    },
-                    "required": ["restated_question", "classify_query"], 
+                    "required": ["restated_question", "classify_query", "possible_conversation_continuation"], 
                     "additionalProperties" : False
                 },
             },
@@ -58,9 +88,10 @@ class Classification(Enum):
     PLATFORM = "platform"
     UNSURE = "unsure"
 
-class QueryClassification(BaseModel):
+class StructuredOutputResponse(BaseModel):
     classification: Classification
     restated_question: str
+    followup_questions: list[str]
 
 class QueryClassificationError(Exception):
     pass
@@ -77,18 +108,25 @@ def parse_query_classification(response):
             arguments_json = tool_call.function.arguments
             arguments_dict = json.loads(arguments_json)
 
-            return QueryClassification(
+            continuation_1 = arguments_dict.get("possible_conversation_continuation", {}).get("continuation_1", "")
+            continuation_2 = arguments_dict.get("possible_conversation_continuation", {}).get("continuation_2", "")
+
+            followup_questions = [continuation_1, continuation_2]
+
+            return StructuredOutputResponse(
                 restated_question=arguments_dict.get("restated_question", None),
-                classification=Classification(arguments_dict.get("classify_query", "unsure"))
+                classification=Classification(arguments_dict.get("classify_query", "unsure")),
+                followup_questions=followup_questions
             )
 
         raise QueryClassificationError(f"Unexpected finish reason: {finish_reason}")
 
     except Exception as e:
         logger.error(f"Error parsing query classification: {e}")
-        return QueryClassification(
+        return StructuredOutputResponse(
             restated_question=None,
-            classification=Classification.UNSURE
+            classification=Classification.UNSURE,
+            followup_questions=[]
         )
 
     

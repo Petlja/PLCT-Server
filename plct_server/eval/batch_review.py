@@ -41,7 +41,7 @@ class Conversation(BaseModel):
         self.query_context.system_message = convert_to_html(self.query_context.system_message)
 
 async def run_test_case(ai_engine: AiEngine, test_case: Conversation, model : str) -> Tuple[str, QueryContext]:
-    answer_generator, context = await ai_engine.generate_answer(
+    answer_generator, _ ,context = await ai_engine.generate_answer(
         history=test_case.history,
         query=test_case.query,
         course_key=test_case.course_key,

@@ -11,7 +11,7 @@ from openai.resources.chat.completions import ChatCompletion
 from .conf import MODEL_CONFIGS, ModelConfig
 from .context_dataset import ContextDataset
 from .query_context import QueryContext, QueryError
-from .structured_outputs.query_classification import TOOLS_CHOICE_DEF, TOOLS_DEF, Classification, QueryClassification, parse_query_classification
+from .structured_outputs.query_classification import TOOLS_CHOICE_DEF, TOOLS_DEF, Classification, StructuredOutputResponse, parse_query_classification
 from . import OPENAI_API_KEY
 
 from .prompt_templates import *
@@ -160,7 +160,7 @@ class AiEngine:
         )
         return response.data[0].embedding
     
-    def _generate_chroma_filter(self, structured_output: QueryClassification, course_key: str, activity_key: str) -> tuple[Classification, dict[str, str], int]:
+    def _generate_chroma_filter(self, structured_output: StructuredOutputResponse, course_key: str, activity_key: str) -> tuple[Classification, dict[str, str], int]:
         if structured_output.classification == Classification.COURSE:
             where = {"course_key": course_key}
             n_results = 2
@@ -175,7 +175,7 @@ class AiEngine:
             n_results = 0
         return where, n_results
         
-    def _get_rag_segment(self, structured_output: QueryClassification, query_embedding: str,
+    def _get_rag_segment(self, structured_output: StructuredOutputResponse, query_embedding: str,
                           course_key: str, activity_key: str) -> tuple[str, list[dict[str, str]]]:
         
         collection = self.ch_cli.get_collection(CDB_COLLECTION_NAME)
@@ -216,7 +216,7 @@ class AiEngine:
         return rag_segment, chunk_metadata
 
     async def preprocess_query(self,query: str, history: list[dict[str, str]], course_key: str, 
-                               activity_key: str, condensed_history: str, model_name : str = None) -> QueryClassification:
+                               activity_key: str, condensed_history: str, model_name : str = None) -> StructuredOutputResponse:
         
         model = model_name or self.default_chat_config
         config = self._get_model_config(model)
@@ -253,7 +253,7 @@ class AiEngine:
     
     
     async def make_system_message(self, history: list[tuple[str,str]], query: str,
-                                   course_key: str, activity_key: str, condensed_history: str, query_context : QueryContext = None) -> str:
+                                   course_key: str, activity_key: str, condensed_history: str, query_context : QueryContext = None) -> tuple[str, list[str]]:
             
         if condensed_history:
             condensed_history_segment = system_message_condensed_history_template.format(condensed_history=condensed_history)
@@ -315,16 +315,16 @@ class AiEngine:
             )
             query_context.set_chunk_metadata(chunk_metadata)
 
-        return system_message
+        return system_message, structured_output.followup_questions
 
     async def generate_answer(self,*, history: list[tuple[str,str]], query: str,
-                            course_key: str, activity_key: str, condensed_history: str, model_name) -> tuple[AsyncIterator[int], QueryContext]:
+                            course_key: str, activity_key: str, condensed_history: str, model_name) -> tuple[AsyncIterator[int], list[str], QueryContext]:
         query_context = QueryContext()
 
         if condensed_history:
             history = [history.pop()]
             
-        system_message = await self.make_system_message(history, query, course_key, activity_key, condensed_history, query_context)
+        system_message, followup_questions = await self.make_system_message(history, query, course_key, activity_key, condensed_history, query_context)
         
         messages = create_message(system_message, history, query)
 
@@ -345,7 +345,7 @@ class AiEngine:
                     if delta.content:
                         yield delta.content
 
-        return answer_generator(), query_context
+        return answer_generator(), followup_questions, query_context
     
     async def generate_condensed_history(self, history: list[tuple[str,str]],
                                           condensed_history: str) -> str:

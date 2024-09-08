@@ -22,6 +22,7 @@ class RagSystemMessageRequest(BaseModel):
 class RagSystemMessageResponse(BaseModel):
     message: str = ""
     condensed_history: str = ""
+    followup_questions: List[str] = []
 
 api_key_header_scheme = APIKeyHeader(name="X-Auth-Key", auto_error=False)
 
@@ -41,7 +42,7 @@ async def rag_system_message(response: Response, input: RagSystemMessageRequest,
     new_condensed_history = ""
     ai_engine = get_ai_engine()
     try:                  
-        system_message = await ai_engine.make_system_message(
+        system_message, followup_questions = await ai_engine.make_system_message(
                 history=input.history, 
                 query=input.query, 
                 course_key=input.course_key, 
@@ -60,7 +61,9 @@ async def rag_system_message(response: Response, input: RagSystemMessageRequest,
         logger.error(f"OpenAIError: {e}")
         return HTTPException(status_code=500, detail="OpenAIError")
     
-    return RagSystemMessageResponse(message=system_message, condensed_history=new_condensed_history)
+    return RagSystemMessageResponse(message=system_message, 
+                                    condensed_history=new_condensed_history, 
+                                    followup_questions=followup_questions)
 
     
 
