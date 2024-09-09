@@ -43,6 +43,10 @@ system_message_summary_template_course = (
     "'''\n"
     "{course_summary}\n"
     "'''\n\n"
+    "Here is the course table of contents delimited by triple quotes:\n\n"
+    "'''\n"
+    "{toc}\n"
+    "'''\n\n"
 )
 
 system_message_summary_template_lesson = (

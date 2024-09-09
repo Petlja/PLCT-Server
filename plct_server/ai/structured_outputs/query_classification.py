@@ -34,14 +34,16 @@ TOOLS_DEF : list[dict[str, object]] = [
                             "enum": ["course", "current_lecture", "platform", "unsure"],
                             "description": 
                             """
-                            Classify the user question as referring to a course, the current lecture, the platform, or unsure.
-                            The `course` classification is used when the question is about the course in general.
+                            Classify the user's question as referring to a course, the current lecture, the platform, or unsure.
 
-                            The `current_lecture` classification is used when the question is about the current lecture.
+                            - **course** Used when the question is about the course in general, including overall topics or materials.
 
-                            The `platform` classification is used when the question is about the petlja.org platform where the course is hosted.
+                            - **current_lecture** classification is used when the question is about the current lecture. 
+                            Sometimes the users will ask you to generate content for the current lecture, or they will ask you to explain a concept from the current lecture.
 
-                            The `unsure` classification is used when the model is unsure about the classification.
+                            - **platform** classification is used when the question is about the petlja.org LMS platform where the course is hosted.
+
+                            - **unsure** classification is used when you aren't sure how to classify the query.
                             """
                         },
                         "possible_conversation_continuation": {
@@ -64,9 +66,10 @@ TOOLS_DEF : list[dict[str, object]] = [
                             These suggestions should be **concise and actionable**—representing things the assistant can do for the user (like generating content or performing tasks).
 
                             Focus on providing clear, **action-oriented commands** the assistant can execute directly when clicked.
+                            
                             Example:
-                            - Generisi kviz za lekciju.
-                            - Pripremi zadatak za domaći.
+                            - Create a test for the current lecture.
+                            - Create a homework for the current lecture.
 
                             **Avoid verbose descriptions or questions.** The suggestions should be brief and phrased as direct actions.
                             
@@ -96,7 +99,7 @@ class StructuredOutputResponse(BaseModel):
 class QueryClassificationError(Exception):
     pass
 
-def parse_query_classification(response):
+def parse_query_classification(response : object, query :str) -> StructuredOutputResponse:
     try:
         finish_reason = response.choices[0].finish_reason
 
@@ -114,7 +117,7 @@ def parse_query_classification(response):
             followup_questions = [continuation_1, continuation_2]
 
             return StructuredOutputResponse(
-                restated_question=arguments_dict.get("restated_question", None),
+                restated_question=arguments_dict.get("restated_question", query),
                 classification=Classification(arguments_dict.get("classify_query", "unsure")),
                 followup_questions=followup_questions
             )
@@ -124,7 +127,7 @@ def parse_query_classification(response):
     except Exception as e:
         logger.error(f"Error parsing query classification: {e}")
         return StructuredOutputResponse(
-            restated_question=None,
+            restated_question=query,
             classification=Classification.UNSURE,
             followup_questions=[]
         )

@@ -249,7 +249,7 @@ class AiEngine:
             tools=tools,
             tool_choice = tools_choice
         )
-        return parse_query_classification(response)
+        return parse_query_classification(response , query)
     
     
     async def make_system_message(self, history: list[tuple[str,str]], query: str,
@@ -285,10 +285,12 @@ class AiEngine:
         )
 
         course_summary, lesson_summary = self.ctx_data.get_summary_texts(course_key, activity_key)
+        course_toc = self.ctx_data.get_toc_text(course_key)
 
         if structured_output.classification == Classification.COURSE:
             summary_segment = system_message_summary_template_course.format(
                 course_summary=course_summary,
+                toc = course_toc
             )         
         if structured_output.classification == Classification.CURRENT_LECTURE:
             summary_segment =  system_message_summary_template_lesson
