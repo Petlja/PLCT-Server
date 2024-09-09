@@ -51,6 +51,10 @@ system_message_summary_template_course = (
 
 system_message_summary_template_lesson = (
     "Consider the question in the context of the current lesson.\n\n"
+    "Here is the current lesson summery delimited by triple quotes:\n"
+    "'''\n\n"
+    "{lesson_summary}\n"
+    "'''\n\n"
 )
 
 system_message_summary_template_platform = (

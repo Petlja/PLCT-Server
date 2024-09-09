@@ -293,7 +293,9 @@ class AiEngine:
                 toc = course_toc
             )         
         if structured_output.classification == Classification.CURRENT_LECTURE:
-            summary_segment =  system_message_summary_template_lesson
+            summary_segment =  system_message_summary_template_lesson.format(
+                lesson_summary=lesson_summary
+            )
 
         if structured_output.classification == Classification.PLATFORM:
             summary_segment = system_message_summary_template_platform

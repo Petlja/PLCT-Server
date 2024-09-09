@@ -8,6 +8,37 @@ from enum import Enum
 logger = logging.getLogger(__name__)
 
 
+CLASSIFY_QUERY_DESCRIPTION = """
+Classify the user's question as referring to a course, the current lecture, the platform, or unsure.
+
+- **course** Used when the question is about the course in general, including overall topics or materials.
+
+- **current_lecture** classification is used when the question is about the current lecture. 
+
+- **platform** classification is used when the question is about the petlja.org LMS platform where the course is hosted.
+
+- **unsure** classification is used when you aren't sure how to classify the query.
+"""
+                        
+
+CONVERSATION_CONTINUATION_DESCRIPTION = """
+Two follow-up suggestions that the user can click to have the assistant perform the action on their behalf.
+Take into account history and avoid repeating the same suggestions.
+
+These suggestions should be **concise and actionable**—representing things the assistant can do for the user (like generating content or performing tasks).
+
+Focus on providing clear, **action-oriented commands** the assistant can execute directly when clicked.
+
+Example:
+- Create a test for the current lecture.
+- Create a homework for the current lecture.
+
+**Avoid verbose descriptions or questions.** The suggestions should be brief and phrased as direct actions.
+
+Always answer in the language of the question.
+"""
+
+
 TOOLS_CHOICE_DEF : dict[str, object] = {
     "type": "function",
     "function": {
@@ -32,19 +63,7 @@ TOOLS_DEF : list[dict[str, object]] = [
                         "classify_query": {
                             "type": "string", 
                             "enum": ["course", "current_lecture", "platform", "unsure"],
-                            "description": 
-                            """
-                            Classify the user's question as referring to a course, the current lecture, the platform, or unsure.
-
-                            - **course** Used when the question is about the course in general, including overall topics or materials.
-
-                            - **current_lecture** classification is used when the question is about the current lecture. 
-                            Sometimes the users will ask you to generate content for the current lecture, or they will ask you to explain a concept from the current lecture.
-
-                            - **platform** classification is used when the question is about the petlja.org LMS platform where the course is hosted.
-
-                            - **unsure** classification is used when you aren't sure how to classify the query.
-                            """
+                            "description": CLASSIFY_QUERY_DESCRIPTION
                         },
                         "possible_conversation_continuation": {
                             "type": "object",
@@ -59,22 +78,7 @@ TOOLS_DEF : list[dict[str, object]] = [
                                 }
                             },
                             "required": ["continuation_1", "continuation_2"],
-                            "description": """
-                            Two follow-up suggestions that the user can click to have the assistant perform the action on their behalf.
-                            Take into account history and avoid repeating the same suggestions.
-
-                            These suggestions should be **concise and actionable**—representing things the assistant can do for the user (like generating content or performing tasks).
-
-                            Focus on providing clear, **action-oriented commands** the assistant can execute directly when clicked.
-                            
-                            Example:
-                            - Create a test for the current lecture.
-                            - Create a homework for the current lecture.
-
-                            **Avoid verbose descriptions or questions.** The suggestions should be brief and phrased as direct actions.
-                            
-                            Always answer in the language of the question.
-                            """
+                            "description": CONVERSATION_CONTINUATION_DESCRIPTION
                         }
 
                    },
@@ -111,10 +115,10 @@ def parse_query_classification(response : object, query :str) -> StructuredOutpu
             arguments_json = tool_call.function.arguments
             arguments_dict = json.loads(arguments_json)
 
-            continuation_1 = arguments_dict.get("possible_conversation_continuation", {}).get("continuation_1", "")
-            continuation_2 = arguments_dict.get("possible_conversation_continuation", {}).get("continuation_2", "")
-
-            followup_questions = [continuation_1, continuation_2]
+            followup_questions = [
+                arguments_dict.get("possible_conversation_continuation", {}).get("continuation_1", ""),
+                arguments_dict.get("possible_conversation_continuation", {}).get("continuation_2", "")
+            ]
 
             return StructuredOutputResponse(
                 restated_question=arguments_dict.get("restated_question", query),
