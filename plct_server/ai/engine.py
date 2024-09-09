@@ -310,7 +310,7 @@ class AiEngine:
         if query_context:
             query_context.add_system_message_parts(
                 [
-                    {"name": "system_message_template", "message": system_message},
+                    {"name": "system_message_template", "message": system_message_template},
                     {"name": "summary_segment", "message": summary_segment},
                     {"name": "condensed_segment", "message": condensed_history_segment},
                     {"name": "rag_segment", "message": rag_segment}
