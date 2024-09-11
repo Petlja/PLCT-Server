@@ -1,4 +1,4 @@
-import { useState, useContext, useEffect } from 'react';
+import { useState, useContext, useEffect, useRef } from 'react';
 import { 
     ChatContainer,
     MainContainer,
@@ -14,6 +14,7 @@ import Select from 'react-select';
 import { AppContext } from "../AppContext";
 import  ChatSampleQuestions from "./ChatSampleQuestions";
 import { useSearchParams } from 'react-router-dom';
+import "./Chat.css";
 
 const welcomeMessage: MessageModel = {
     direction: "incoming",
@@ -21,6 +22,11 @@ const welcomeMessage: MessageModel = {
     position: "normal",
     sender: "Čet.kabinet",
 };
+
+const defaultQuestions = ["Napravi mi pitanja za test iz ove lekcije.",
+                          "Napravi mi domaći zadatak za ovu lekciju.",
+                          "Napravi mi plan casa za ovu lekciju.",
+                        ];
 
 export function Chat() {
     const [messages, setMessages] = useState<MessageModel[]>([welcomeMessage]);
@@ -36,6 +42,8 @@ export function Chat() {
     const [lessonList, setLessonList] = useState<{key: string; title: string}[]>([{key: '-', title: '---'}]);
     const [activitiyKey, setActivityKey] = useState<string>("-");
     const [activityList, setActivityList] = useState<{key: string; title: string}[]>([{key: '-', title: '---'}]);
+    const [model, setModel] = useState<string>("gpt-4o-mini");
+    const [questions, setQuestions] = useState<string[]>(defaultQuestions);
 
     async function handleCourseChange() {
         const r_lessons = await fetch(
@@ -86,6 +94,7 @@ export function Chat() {
             setMessages([welcomeMessage])
             setHistory([])
             setCondensedHistory("")
+            setQuestions(defaultQuestions)
     }, [activitiyKey]);
 
     async function postQuestion(question: string, withHistory = true) {
@@ -94,7 +103,8 @@ export function Chat() {
             "question": question,
             "accessKey": context?.accessKey ?? "default",
             "condensedHistory": condensedHistory,
-            "contextAttributes": {"activity_key": activitiyKey, "course_key": courseKey}
+            "contextAttributes": {"activity_key": activitiyKey, "course_key": courseKey},
+            "model": model
         };
         const r = await fetch(
             "../api/chat",
@@ -113,6 +123,7 @@ export function Chat() {
         textContent: string
     ) {
         setAnswering(true);
+        setQuestions([]);
         const utf8decoder = new TextDecoder("utf-8");
 
         const outMessage: MessageModel = {
@@ -143,10 +154,18 @@ export function Chat() {
                         const metadata = JSON.parse(jsonText);
 
                         let condensedHistory = metadata.condensed_history;
+                        let followupQuestions = metadata.followup_questions;
 
                         if (condensedHistory !== "")
                             setCondensedHistory(condensedHistory ? condensedHistory : "");
 
+                        if (followupQuestions) {
+                                setQuestions(followupQuestions); 
+                        }
+                        else{
+                            setQuestions([]);
+                        }
+                
                         hasInitialData = true;
                         answerText += chunkText.slice(metadataEndIndex + 1);
                 }
@@ -171,6 +190,11 @@ export function Chat() {
         setHistory([...history, { q: textContent, a: answerText }]);
         setAnswering(false);
     }
+
+    const handleQuestionClick = async (question: string) => {
+        await handleSend(question);
+      };
+      
 
     useEffect(() => {
         async function init() {
@@ -217,6 +241,11 @@ export function Chat() {
                     {activityList.map((c, i) => <option key={i} value={c.key}>{c.title}</option>)}
                 </select>
                 <br />
+                <select className="form-select" value={model} onChange={(e) => setModel(e.target.value)}>
+                    <option value="gpt-4o">gpt-4o</option>
+                    <option value="gpt-4o-mini">gpt-4o-mini</option>
+                </select>
+                <br />
                 <MainContainer responsive>
                     <ChatContainer>
                         <MessageList
@@ -239,7 +268,15 @@ export function Chat() {
                     </ChatContainer>
                 </MainContainer>
                 <br />
+                <div className="follow-up-questions">
+                {questions.map((question, index) => (
+                        <p key={index} onClick={() => handleQuestionClick(question)}>
+                            {question}
+                        </p>
+                    ))}
+                </div>
             </div>
+
         );
     }
     else if (auth === "fail") {

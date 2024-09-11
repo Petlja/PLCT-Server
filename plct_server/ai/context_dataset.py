@@ -26,6 +26,7 @@ class CourseSummary(BaseModel):
     db_id: int = None
     title: str
     summary_text_path: str
+    toc_text_path : str
     activities: dict[str, ActivitySummary]
 
 class ChunkMetadata(BaseModel):
@@ -44,14 +45,17 @@ class ContextDatasetBuilder:
         self.base_dir = base_dir
         self.course_dict = {}
 
-    def add_course(self, *, course_key: str, course_title: str, summary_text, db_id: int = None):
+    def add_course(self, *, course_key: str, course_title: str, summary_text, toc_str:str, db_id: int = None):
         course_summary = CourseSummary(
             course_key=course_key, db_id=db_id, title=course_title,
-            summary_text_path="summaries/course-summary.txt", activities={})
+            summary_text_path="summaries/course-summary.txt",
+            toc_text_path="summaries/course-toc.txt", activities={})
         self.course_dict[course_key] = course_summary
         summary_text_path = os.path.join(self.base_dir, course_key, course_summary.summary_text_path)
+        toc_text_path = os.path.join(self.base_dir, course_key, course_summary.toc_text_path)
         os.makedirs(os.path.dirname(summary_text_path), exist_ok=True)
         write_str(summary_text_path, summary_text)
+        write_str(toc_text_path, toc_str)
         
     
     def add_activity(self,*, course_key: str, activity_key: str, activity_title: str, summary_text_rel_path: str, summary_text: str):
@@ -66,7 +70,8 @@ class ContextDatasetBuilder:
 
     def add_chunck(self, chunk_text: str, chunk_meta: ChunkMetadata, 
                      embeding_model:str, embeding_sizes: list[int]):
-        chunk_hash = hashlib.sha256(chunk_text.encode('utf-8')).hexdigest()
+        str_for_hash = "\n".join([chunk_meta.course_key, chunk_text]).encode('utf-8')
+        chunk_hash = hashlib.sha256(str_for_hash).hexdigest()
         logger.info(f"Hash: {chunk_hash}, TextLengt: {len(chunk_text)}")
         hash_prefix = chunk_hash[:2]
         chunk_dir = os.path.join(self.base_dir, "chunks", hash_prefix)
@@ -192,6 +197,14 @@ class ContextDataset:
         activity_summary_txt = self.fs.read_str(activity_summary_path)
         return course_summary_txt, activity_summary_txt
     
+    def get_toc_text(self, course_key: str) -> str:
+        course_summary = self.course_dict.get(course_key)
+        if course_summary is None:
+            return None
+        course_toc_path = f"{course_key}/{course_summary.toc_text_path}"
+        course_toc_txt = self.fs.read_str(course_toc_path)
+        return course_toc_txt
+
     def get_chunk_text(self, chunk_hash: str) -> str:
         hash_prefix = chunk_hash[:2]
         chunk_path = f'chunks/{hash_prefix}/{chunk_hash}.txt'

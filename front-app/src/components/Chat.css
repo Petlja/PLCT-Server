@@ -1,0 +1,14 @@
+.follow-up-questions{
+  border: 1px solid #d1dbe3;
+  padding: 1rem;
+}
+.follow-up-questions p{
+  cursor: pointer;
+  font-weight: 400;
+  font-size: medium;
+  transition: all 0.1s;
+}
+  
+  .follow-up-questions p:hover {
+    font-weight: 700;
+  }

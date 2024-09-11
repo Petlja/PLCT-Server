@@ -1,25 +1,38 @@
+from pydantic import BaseModel
+
 AZURE_ENDPOINT = "https://petljaopenaiservicev2.openai.azure.com/"
 
+class ModelConfig(BaseModel):
+    name: str
+    azure_deployment_name: str
+    azure_endpoint: str
+    api_version: str
+    context_size: int
+    type : str
+
 MODEL_CONFIGS = {
-    "gpt-4o-mini": {
-        "LLM_MODEL": "gpt-4o-mini",
-        "AZURE_DEPLOYMENT_NAME": "gpt-4o-mini",
-        "AZURE_ENDPOINT": AZURE_ENDPOINT,
-        "API_VERSION": "2023-03-15-preview",
-        "CONTEXT_SIZE": 128_000
-    },
-    "text-embedding-3-large": {
-        "LLM_MODEL": "text-embedding-3-large",
-        "AZURE_DEPLOYMENT_NAME": "text-embedding-3-large",
-        "AZURE_ENDPOINT": AZURE_ENDPOINT,
-        "API_VERSION": "2023-05-15",
-        "CONTEXT_SIZE": 8_191
-    },
-    "gpt-35-turob-16k": {
-        "LLM_MODEL": "gpt-35-turob-16k",
-        "AZURE_DEPLOYMENT_NAME": "gpt-35-turob-16k",
-        "AZURE_ENDPOINT": AZURE_ENDPOINT,
-        "API_VERSION": "2023-03-15-preview",
-        "CONTEXT_SIZE": 16_385
-    }
+    "gpt-4o-mini": ModelConfig(
+        name="gpt-4o-mini",
+        azure_deployment_name="gpt-4o-mini",
+        azure_endpoint=AZURE_ENDPOINT,
+        api_version="2023-03-15-preview",
+        type = "chat",
+        context_size=128_000
+    ),
+    "gpt-4o": ModelConfig(
+        name="gpt-4o",
+        azure_deployment_name="gpt-4o",
+        azure_endpoint=AZURE_ENDPOINT,
+        api_version="2024-02-15-preview",
+        type = "chat",
+        context_size=128_000
+    ),
+    "text-embedding-3-large": ModelConfig(
+        name="text-embedding-3-large",
+        azure_deployment_name="text-embedding-3-large",
+        azure_endpoint=AZURE_ENDPOINT,
+        api_version="2023-05-15",
+        type = "embedding",
+        context_size=8_191
+    )
 }
