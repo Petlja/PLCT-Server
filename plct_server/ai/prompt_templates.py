@@ -4,16 +4,16 @@ preprocess_system_message_template_with_history = (
     " - **current lesson**\n" 
     " - **course** \n"
     " - **platform** in general.\n"
-    "You are given a course summary, and the current lesson summary, and a summary of previous user questions and assistant explanations.\n"
-    "Here is the course summery delimited by triple quotes:\n\n"
+    "You are given a course summary, and the current lesson summary, and a summary of previous teacher questions and assistant explanations.\n"
+    "Here is the course summary delimited by triple quotes:\n\n"
     "'''\n"
     "{course_summary}\n"
     "'''\n\n"
-    "Here is the current lesson summery delimited by triple quotes:\n"
+    "Here is the current lesson summary delimited by triple quotes:\n"
     "'''\n\n"
     "{lesson_summary}\n"
     "'''\n\n"
-    "Here is the summary of previous user questions and assistant explanations delimited by triple quotes: \n"
+    "Here is the summary of previous teacher questions and assistant explanations delimited by triple quotes: \n"
     "'''\n\n"
     "{condensed_history}\n"
     "'''\n\n"
@@ -24,11 +24,11 @@ preprocess_system_message_template = (
     " - **current lesson**\n" 
     " - **course** \n"
     " - **platform** in general.\n"
-    "Here is the course summery delimited by triple quotes:\n\n"
+    "Here is the course summary delimited by triple quotes:\n\n"
     "'''\n"
     "{course_summary}\n"
     "'''\n\n"
-    "Here is the current lesson summery delimited by triple quotes:\n"
+    "Here is the current lesson summary delimited by triple quotes:\n"
     "'''\n\n"
     "{lesson_summary}\n"
     "'''\n\n"
@@ -54,7 +54,7 @@ system_message_summary_template_course = (
 
 system_message_summary_template_lesson = (
     "Consider the question in the context of the current lesson.\n\n"
-    "Here is the current lesson summery delimited by triple quotes:\n"
+    "Here is the current lesson summary delimited by triple quotes:\n"
     "'''\n\n"
     "{lesson_summary}\n"
     "'''\n\n"
@@ -78,7 +78,17 @@ system_message_summary_template_unsure = (
     "'''\n\n"
     "{lesson_summary}\n"
     "'''\n\n"
-    "If the question is out of the scope of the above course and lesson you can answer that you are not sure and that you can't help.\n\n"
+    "If the question is out of the scope of the current course or lesson but relates to general programming and computer science, provide an answer if it is within these topics:\n\n"
+    "   - Basic programming concepts (e.g., variables, loops, functions, data types)\n"
+    "   - Common algorithms (e.g., sorting, searching, recursion)\n"
+    "   - Object-oriented programming principles (e.g., inheritance, polymorphism, encapsulation)\n"
+    "   - Data structures (e.g., arrays, lists, trees, graphs)\n"
+    "   - Debugging and problem-solving techniques\n"
+    "   - Web development fundamentals (e.g., HTML, CSS, JavaScript basics)\n"
+    "   - Common programming languages (e.g., Python, Java, C#)\n"
+    "   - General school-related questions (e.g., how to study, how to prepare for exams)\n\n"
+
+    "However, if the question falls outside these general topics and or the course topics, answer that you are not sure and that you can't help.\n\n"
 )
 
 system_message_rag_template = (
@@ -104,24 +114,24 @@ compare_prompt = (
 )
 
 system_message_condensed_history_template = (
-    "Here is the summary of previous user questions and assistant explanations delimited by triple quotes \n\n"
+    "Here is the summary of previous teacher questions and assistant explanations delimited by triple quotes \n\n"
     "'''\n"
     "{condensed_history}\n"
     "'''\n\n"
 )
 
 condensed_history_system = (
-    "You are an AI assistant. Your task is to help summarize conversations between the user and the assistant.\n"
+    "You are an AI assistant. Your task is to help summarize conversations between the teacher and the assistant.\n"
     "You are either asked to provide a summary of the conversation or to provide a new summary based on the previous summary and the latest question and answer.\n"
 )
 
 condensed_history_template = (
-    "Summarize the conversation between the user and the assistant.\n"
+    "Summarize the conversation between the teacher and the assistant.\n"
     "Here is the condensed history delimited by triple quotes:\n"
     "'''\n"
     "{condensed_history}\n"
     "''''\n"
-    "Latest conversation includes this user question delimited by triple quotes:\n"
+    "Latest conversation includes this teacher question delimited by triple quotes:\n"
     "'''\n"
     "{latest_user_question}.\n"
     "'''\n"
@@ -132,7 +142,7 @@ condensed_history_template = (
 )
 
 new_condensed_history_template = (
-    "Summarize the conversation between the user and the assistant.\n"
+    "Summarize the conversation between the teacher and the assistant.\n"
     "User question delimited by triple quotes:\n "
     "'''\n"
     "{previous_user_question_1}\n"
