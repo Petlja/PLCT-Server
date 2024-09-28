@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from enum import Enum
 from urllib.parse import urljoin, urlparse
 import json
 from typing import Sequence, Optional
@@ -22,6 +23,8 @@ from ..ai import engine
 
 logger = logging.getLogger(__name__)
 
+
+
 class ConfigOptions(BaseSettings):
     """Options from the configuration file and/or CLI attributes."""
     model_config = SettingsConfigDict(env_prefix='plct_')
@@ -41,6 +44,7 @@ class ConfigOptions(BaseSettings):
     ai_ctx_url: str | None = None
     verbose: bool | None = None
     api_key: str | None = None
+    openai_service_provider: engine.OpenAIProvider = engine.OpenAIProvider.openai_com
 
 class ServerContent:
 
@@ -142,7 +146,7 @@ def configure(*, course_urls: tuple[str] = None, verbose: bool = None,
     global _server_content
     _server_content = ServerContent(conf)
     if conf.ai_ctx_url:
-        engine.init(conf.ai_ctx_url)
+        engine.init(conf.ai_ctx_url, conf.openai_service_provider)
     
 
 

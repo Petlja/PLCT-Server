@@ -69,7 +69,7 @@ class ContextDatasetBuilder:
         
 
     def add_chunck(self, chunk_text: str, chunk_meta: ChunkMetadata, 
-                     embeding_model:str, embeding_sizes: list[int]):
+                     embeding_model:str, embeding_sizes: list[int], oa_cln: openai.OpenAI):
         str_for_hash = "\n".join([chunk_meta.course_key, chunk_text]).encode('utf-8')
         chunk_hash = hashlib.sha256(str_for_hash).hexdigest()
         logger.info(f"Hash: {chunk_hash}, TextLengt: {len(chunk_text)}")
@@ -82,12 +82,7 @@ class ContextDatasetBuilder:
             write_str(chunk_text_path, chunk_text)
             chunk_meta_json_str = chunk_meta.model_dump_json(indent=2)
             write_str(metadata_path, chunk_meta_json_str)
-        oa_cln = openai.AzureOpenAI(
-            azure_endpoint = "https://petljaopenaiservicev2.openai.azure.com", 
-            api_key= OPENAI_API_KEY,  
-            api_version="2023-05-15",
-            azure_deployment= 'text-embedding-3-large'
-        )
+
         for embeding_size in embeding_sizes:
             embeding_path = os.path.join(chunk_dir, f"{chunk_hash}-{embeding_model}-{embeding_size}.json")
             if not os.path.exists(embeding_path):

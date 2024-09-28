@@ -60,7 +60,7 @@ Do initial install/build using npm:
 ```
 pushd front-app
 npm install
-npm build
+npm run build
 popd
 poetry install
 ```
