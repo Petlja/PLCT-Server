@@ -1,4 +1,4 @@
-
+import os
 import logging
 from enum import Enum
 import chromadb
@@ -13,22 +13,21 @@ from .conf import MODEL_CONFIGS, ModelConfig
 from .context_dataset import ContextDataset
 from .query_context import QueryContext, QueryError
 from .structured_outputs.query_classification import TOOLS_CHOICE_DEF, TOOLS_DEF, Classification, StructuredOutputResponse, parse_query_classification
-from . import OPENAI_API_KEY
 
 from .prompt_templates import *
 
-class OpenAIProvider(str, Enum):
-    openai_com = "openai.com"
-    azure = "azure"
-    
 logger = logging.getLogger(__name__)
+
+ENV_NAME_OPENAI_API_KEY = "CHATAI_OPENAI_API_KEY"
 
 ai_engine: "AiEngine" = None
 
-def init(base_url: str, openai_service_provider: OpenAIProvider):
+def init(*, ai_ctx_url: str, azure_default_ai_endpoint: str | None, azure_ai_endpoints: dict[str, str] | None):
     global ai_engine
     if ai_engine is None:
-        ai_engine = AiEngine(base_url, openai_service_provider)
+        ai_engine = AiEngine(ai_ctx_url=ai_ctx_url, 
+                             azure_default_ai_endpoint=azure_default_ai_endpoint, 
+                             azure_ai_endpoints=azure_ai_endpoints)
     else:
         raise ValueError(f"{__name__} already initialized")
     
@@ -55,15 +54,20 @@ PETLJA_DOCS_COURSE_KEY = "petlja-docs"
 
 
 class AiEngine:
-    def __init__(self, base_url: str, openai_service_provider: OpenAIProvider):
-        logger.debug(f"ai_context_dir: {base_url}")
-        self.ctx_data = ContextDataset(base_url)
+    def __init__(self, *, ai_ctx_url: str, azure_default_ai_endpoint: str | None, azure_ai_endpoints: dict[str, str] | None):
+        logger.debug(f"ai_ctx_url: {ai_ctx_url}")
+        self.ctx_data = ContextDataset(ai_ctx_url)
         self.ch_cli = chromadb.Client()
         self.encoding : Encoding = tiktoken.encoding_for_model(EMBEDDING_MODEL) 
         self._load_embeddings()
         self.default_chat_config = CHAT_MODEL
         self.default_embedding_config = EMBEDDING_MODEL
-        self.openai_service_provider = openai_service_provider
+        self.azure_endpoint_dict = dict()
+        for m in MODEL_CONFIGS:
+            if m in (azure_ai_endpoints or {}):
+                self.azure_endpoint_dict[m] = azure_ai_endpoints[m]
+            elif azure_default_ai_endpoint:
+                self.azure_endpoint_dict[m] = azure_default_ai_endpoint
 
     def _load_embeddings(self):
         collection = self.ch_cli.create_collection(
@@ -100,14 +104,19 @@ class AiEngine:
     
     def _get_async_openai_client(self, modelConfig: ModelConfig) -> AsyncOpenAI:
         logger.debug(f"Creating OpenAI client for model {modelConfig.name}")
-        if ai_engine.openai_service_provider == OpenAIProvider.openai_com:
-            return AsyncOpenAI(api_key=OPENAI_API_KEY)
-        else: # ai_engine.openai_service_provider == OpenAIProvider.azure
+        model_key_name = f"{ENV_NAME_OPENAI_API_KEY}_{modelConfig.name.upper()}"
+        if model_key_name in os.environ:
+            api_key = os.environ[model_key_name]
+        else:
+            api_key = os.environ[ENV_NAME_OPENAI_API_KEY]
+        if modelConfig.name not in ai_engine.azure_endpoint_dict:
+            return AsyncOpenAI(api_key=api_key)
+        else: 
             return AsyncAzureOpenAI(
-                api_key=OPENAI_API_KEY,
-                azure_endpoint=modelConfig.azure_endpoint,
+                api_key=api_key,
+                azure_endpoint=ai_engine.azure_endpoint_dict[modelConfig.name],
                 azure_deployment=modelConfig.azure_deployment_name,
-                api_version=modelConfig.api_version
+                api_version=modelConfig.azure_api_version
             )
 
     async def _handle_query_submission(self, message: list[dict[str, str]], max_tokens: int, stream : bool,

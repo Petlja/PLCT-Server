@@ -12,8 +12,6 @@ import zstandard as zstd
 
 from ..content.fileset import FileSet, LocalFileSet
 from ..ioutils import read_json, read_str, write_str
-from . import OPENAI_API_KEY
-
 
 logger = logging.getLogger(__name__)
 

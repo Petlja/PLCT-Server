@@ -1,6 +1,5 @@
 {
     "verbose": false,
     "course_project_dirs": [],
-    "api_key": null,
-    "openai_service_provider": "openai.com"
+    "api_key": null
 }
