@@ -104,14 +104,18 @@ class AiEngine:
     
     def _get_async_openai_client(self, modelConfig: ModelConfig) -> AsyncOpenAI:
         logger.debug(f"Creating OpenAI client for model {modelConfig.name}")
-        model_key_name = f"{ENV_NAME_OPENAI_API_KEY}_{modelConfig.name.upper()}"
-        if model_key_name in os.environ:
-            api_key = os.environ[model_key_name]
+        model_env_name = f"{ENV_NAME_OPENAI_API_KEY}_{modelConfig.name.upper()}"
+        if model_env_name in os.environ:
+            env_name = model_env_name
         else:
-            api_key = os.environ[ENV_NAME_OPENAI_API_KEY]
+            env_name = ENV_NAME_OPENAI_API_KEY
+        api_key = os.environ[env_name]
         if modelConfig.name not in ai_engine.azure_endpoint_dict:
+            logger.debug(f"Using default OpenAI API for model {modelConfig.name} with key from {env_name}")
             return AsyncOpenAI(api_key=api_key)
         else: 
+            logger.debug(f"Using Azure OpenAI API for model {modelConfig.name} with key from {env_name}"
+                         f" and endpoint {ai_engine.azure_endpoint_dict[modelConfig.name]}")
             return AsyncAzureOpenAI(
                 api_key=api_key,
                 azure_endpoint=ai_engine.azure_endpoint_dict[modelConfig.name],

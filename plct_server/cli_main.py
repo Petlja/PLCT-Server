@@ -12,12 +12,13 @@ logger = getLogger(__name__)
 
 @click.command()
 @click.argument("folders", nargs=-1, type=click.Path(exists=True, file_okay=False, dir_okay=True))
+@click.option("-c", "--config", help="Configuration file")
 @click.option("-h", "--host", default="127.0.0.1", help="Host to bind to")
 @click.option("-p", "--port", default=8000, help="Port to bind to")
 @click.option("-v", "--verbose", is_flag=True, help="Enable verbose logging")
 @click.option("-a", "--ai-context", help="Folder with AI context")
 @click.option("-e", "--azure-ai-endpoint", help="Azure AI endpoint. For model specific values use modelname=endpoint syntax", multiple=True)
-def serve(folders: tuple[str], host: str, port: int, verbose:bool, ai_context:str, azure_ai_endpoint: list[str]) -> None:
+def serve(folders: tuple[str], config : str, host: str, port: int, verbose:bool, ai_context:str, azure_ai_endpoint: list[str]) -> None:
     """Start the HTTP server for PLCT course(s).
     
     FOLDERS: The folders of PLCT projects to serve. If not provided, the current directory is used."""
@@ -34,11 +35,11 @@ def serve(folders: tuple[str], host: str, port: int, verbose:bool, ai_context:st
         else:
             key, value = parts
             azure_ai_endpoints[key] = value
-    
+
     server.configure(
-        course_urls = folders, verbose = verbose, 
-        ai_ctx_url = ai_context, azure_default_ai_endpoint = azure_default_ai_endpoint, 
-        azure_ai_endpoints = azure_ai_endpoints)
+        course_urls=folders, config_file=config, verbose=verbose, 
+        ai_ctx_url=ai_context, azure_default_ai_endpoint=azure_default_ai_endpoint, 
+        azure_ai_endpoints=azure_ai_endpoints)
     
     app = FastAPI()
     app.include_router(get_ui_router())
