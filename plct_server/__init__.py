@@ -9,7 +9,8 @@ if not logger.hasHandlers():
     handler = RichHandler(show_time=False)
     formatter = logging.Formatter(' %(message)s')
     handler.setFormatter(formatter)
-    logger.addHandler(handler)
+    logging.basicConfig(level=logging.INFO, handlers=[handler])
+    
 
 def register_extension_command(cli_group):
     from .cli_main import serve, batch_review
