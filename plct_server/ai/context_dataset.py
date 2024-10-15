@@ -6,7 +6,7 @@ import logging
 import os
 from dataclasses import dataclass
 import re
-import openai
+from openai import OpenAI, AzureOpenAI
 from pydantic import BaseModel
 import zstandard as zstd
 
@@ -21,7 +21,6 @@ class ActivitySummary(BaseModel):
 
 class CourseSummary(BaseModel):
     course_key: str
-    db_id: int = None
     title: str
     summary_text_path: str
     toc_text_path : str
@@ -43,9 +42,9 @@ class ContextDatasetBuilder:
         self.base_dir = base_dir
         self.course_dict = {}
 
-    def add_course(self, *, course_key: str, course_title: str, summary_text, toc_str:str, db_id: int = None):
+    def add_course(self, *, course_key: str, course_title: str, summary_text, toc_str:str):
         course_summary = CourseSummary(
-            course_key=course_key, db_id=db_id, title=course_title,
+            course_key=course_key, title=course_title,
             summary_text_path="summaries/course-summary.txt",
             toc_text_path="summaries/course-toc.txt", activities={})
         self.course_dict[course_key] = course_summary
@@ -67,7 +66,7 @@ class ContextDatasetBuilder:
         
 
     def add_chunck(self, chunk_text: str, chunk_meta: ChunkMetadata, 
-                     embeding_model:str, embeding_sizes: list[int], oa_cln: openai.OpenAI):
+                     embeding_model:str, embeding_sizes: list[int], oa_cln: OpenAI | AzureOpenAI):
         str_for_hash = "\n".join([chunk_meta.course_key, chunk_text]).encode('utf-8')
         chunk_hash = hashlib.sha256(str_for_hash).hexdigest()
         logger.info(f"Hash: {chunk_hash}, TextLengt: {len(chunk_text)}")

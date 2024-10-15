@@ -43,7 +43,6 @@ class ConfigOptions(BaseSettings):
     verbose: bool | None = None
     api_key: str | None = None
     azure_default_ai_endpoint: str | None = None
-    azure_ai_endpoints: dict[str, str] | None = None
 
 class ServerContent:
 
@@ -89,10 +88,8 @@ def get_server_content() -> ServerContent:
     return _server_content
 
 def configure(*, course_urls: tuple[str] = None, config_file: str = None, verbose: bool = None,
-              ai_ctx_url: str = None, azure_default_ai_endpoint: str = None, 
-              azure_ai_endpoints: dict[str, str] = None) -> None:
-    
-    print(f"verbose: {verbose}")
+              ai_ctx_url: str = None, azure_default_ai_endpoint: str = None) -> None:
+    logger.debug(f"verbose: {verbose}")
     if verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
@@ -148,16 +145,13 @@ def configure(*, course_urls: tuple[str] = None, config_file: str = None, verbos
         conf.verbose = verbose
     if azure_default_ai_endpoint:
         conf.azure_default_ai_endpoint = azure_default_ai_endpoint
-    if azure_ai_endpoints:
-        conf.azure_ai_endpoints = azure_ai_endpoints
     if conf.verbose:
         logging.basicConfig(level=logging.DEBUG)
     logger.debug(f"ConfigOptions: {conf}")
     global _server_content
     _server_content = ServerContent(conf)
     if conf.ai_ctx_url:
-        engine.init(ai_ctx_url=conf.ai_ctx_url, azure_default_ai_endpoint=conf.azure_default_ai_endpoint, 
-                    azure_ai_endpoints=conf.azure_ai_endpoints)
+        engine.init(ai_ctx_url=conf.ai_ctx_url, azure_default_ai_endpoint=conf.azure_default_ai_endpoint)
     
 
 
