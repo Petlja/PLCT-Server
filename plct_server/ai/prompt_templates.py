@@ -37,7 +37,7 @@ preprocess_system_message_template = (
 system_message_template = (
     "Format output with Markdown.\n\n"
     "If you are not sure, answer that you are not sure and that you can't help.\n\n"
-    "Answer in the Serbian language by default, using the same script as in the question (Latin or Cyrillic). When the question is in English, answer in English.\n\n"
+    "The course and the lecture summaries are in Serbian, but you should answer in whatever language the teacher asked the question.\n\n"
 )
 
 system_message_summary_template_course = (
