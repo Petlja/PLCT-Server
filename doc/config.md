@@ -23,7 +23,7 @@ Use the `PLCT_SERVER_CONFIG_FILE` environment variable.
 
 You don’t need to use the `plct-server` command line; instead, you can run the PLCT Server like any Python ASGI web application. In this case, you can use the `PLCT_SERVER_CONFIG_FILE` environment variable along with the appropriate configuration file to set the options. For example, you can run the PLCT Server using the Uvicorn ASGI web server:
 
-*Windows Command Propmt*
+*Windows Command Prompt*
 ```
 SET PLCT_SERVER_CONFIG_FILE=dev-server.json
 uvicorn plct_server.ui_main:app --host 127.0.0.1 --port 8000
@@ -41,7 +41,7 @@ You can configure verbose messages, which will effectively set the debug log lev
 
 ### cmmand line
 
-Use `-v` or `--verbose`. Examle:
+Use `-v` or `--verbose`. Example:
 ```
 plct-serve -v
 ```
@@ -64,7 +64,7 @@ Use positional command line arguments to specify the folder paths of PLCT projec
 plct-serve ../courses/intro_to_prog ../courses/databases
 ```
 
-Relative patsh are considered relative to the current folder.
+Relative paths are considered relative to the current folder.
 
 ### configuration file<a id='course_paths'></a>
 
@@ -135,7 +135,7 @@ Relative paths are considered relative to the folder of the configuration file. 
 
 ## RAG API
 
-PLCT server implements the Retrival Augumented Generation (RAG) REST API. To enable access to the API, you need to specify an API key.
+PLCT server implements the Retrieval Augmented Generation (RAG) REST API. To enable access to the API, you need to specify an API key.
 
 ### configuration file
 
@@ -147,7 +147,14 @@ Use the `api_key` key. Example:
 }
 ```
 
-The API key in the above examle is randomly generated SHA-256 hash.
+The API key in the above example is randomly generated SHA-256 hash.
+
+## OpenAI API keys
+
+### environment variables
+
+Use the `CHATAI_OPENAI_API_KEY` environment variable to set the OpenAI API key or use
+`CHATAI_AZURE_API_KEY` to set Azure OpenAI Service key and if you do make sure you set the `azure_default_ai_endpoint`.
 
 ## Azure OpenAI Service
 
@@ -155,30 +162,57 @@ By default, the PLCT server uses the standard OpenAI endpoint, but it can also b
 
 ### command line
 
-Use `-e`, `--azure-ai-endpoint` to set default and/or model specific endpoint(s). For model specific endpoint use *modelname*=*endpoint* syntax. Example:
+Use `-e`, `--azure-ai-endpoint` to set the endpoint. Example:
 
 ```
-plct-serve -e https://my_endpoint1.openai.azure.com/ -e text-embedding-3-large=https://my_endpoint1.openai.azure.com/ 
+plct-serve -e https://my_endpoint1.openai.azure.com/
 ```
 
 ### configuration file
 
-Use the `azure_default_ai_endpoint` string for default Azure OpenAI Service endpoint and/or `azure_ai_endpoints` dictionary for model sepecific endpoints. Example:
+Use the `azure_default_ai_endpoint` string for default Azure OpenAI Service. Example:
 
 ```json
 {
   "azure_default_ai_endpoint": "https://my_endpoint1.openai.azure.com/",
-  "azure_ai_endpoints": { 
-    "text-embedding-3-large": "https://my_endpoint1.openai.azure.com/"
-  }
 }
 ```
 
-## OpenAI API keys
+Once the Azure OpenAI Service endpoint is provided, ensure that you set up your Azure environment with the correct models. This includes specifying the model names, deployment names, and API versions that you will use. You can modify or reference the `MODEL_CONFIGS`, located in the PLCT Server configuration file [`plct_server.ai.conf`](https://github.com/Petlja/PLCT-Server/blob/main/plct_server/ai/conf.py)
 
-### environment variables
 
-Use the `CHATAI_OPENAI_API_KEY` environment variable to set the OpenAI API key. If you need a different key for a specific model, use the model name in uppercase as a suffix, like `CHATAI_OPENAI_API_KEY_TEXT-EMBEDDING-3-LARGE`.
+```python
+MODEL_CONFIGS = {
+    "gpt-4o-mini": ModelConfig(
+        name="gpt-4o-mini",
+        azure_deployment_name="gpt-4o-mini",
+        api_version="2023-03-15-preview",
+        type="chat",
+        context_size=128_000
+    ),
+    "gpt-4o": ModelConfig(
+        name="gpt-4o",
+        azure_deployment_name="gpt-4o"
+        api_version="2024-02-15-preview",
+        type="chat",
+        context_size=128_000
+    ),
+    "text-embedding-3-large": ModelConfig(
+        name="text-embedding-3-large",
+        azure_deployment_name="text-embedding-3-large",
+        api_version="2023-05-15",
+        type="embedding",
+        context_size=8_191
+    )
+}
+```
+
+For example, if you already have an Azure OpenAI deployment for the gpt-4o-mini model named `my-gpt-4o-mini`, ensure that the azure_deployment_name and api_version fields are correctly configured:
+
+```python
+  azure_deployment_name="my-gpt-4o-mini"
+  api_version="2023-05-15"
+```
 
 
 
