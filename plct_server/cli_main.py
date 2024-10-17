@@ -43,14 +43,15 @@ def serve(folders: tuple[str], config : str, host: str, port: int, verbose:bool,
 @click.option("-c", "--compare-with-ai", is_flag=True, help="Compare responses with AI")
 @click.option("-d", "--conversation-dir", type = click.Path(exists=True, file_okay=False, dir_okay=True),default=CONVERSATION_DIR, help="Directory holding pre-arranged conversations")
 @click.option("-m", "--model", default ="gpt-4o" ,help="default model to use")
-def batch_review(ai_context:str, batch_name:str, set_benchmark: bool, verbose, compare_with_ai: bool, conversation_dir: str, model : str) -> None:
+@click.option("-nr", "--no-report", is_flag=True, help="Do not generate HTML report", default=False)
+def batch_review(ai_context:str, batch_name:str, set_benchmark: bool, verbose, compare_with_ai: bool, conversation_dir: str, model : str, no_report: bool) -> None:
     import platform
     if platform.system()=='Windows':
        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     
-    asyncio.run(batch_review_async(ai_context, batch_name, set_benchmark, verbose, compare_with_ai, conversation_dir, model))
+    asyncio.run(batch_review_async(ai_context, batch_name, set_benchmark, verbose, compare_with_ai, conversation_dir, model, no_report))
     
-async def batch_review_async(ai_context:str, batch_name:str, set_benchmark: bool, verbose, compare_with_ai: bool, conversation_dir: str, model : str):
+async def batch_review_async(ai_context:str, batch_name:str, set_benchmark: bool, verbose, compare_with_ai: bool, conversation_dir: str, model : str, no_report: bool) -> None:
     server.configure(
         ai_ctx_url = ai_context,
         verbose =  verbose)
@@ -58,7 +59,7 @@ async def batch_review_async(ai_context:str, batch_name:str, set_benchmark: bool
     logger.info("Starting batch review of conversations")
     await batch_prompt_conversations(conversation_dir = conversation_dir, batch_name=batch_name, set_benchmark=set_benchmark, model = model)
 
-    if not set_benchmark:
+    if not (set_benchmark or no_report):
         logger.info("Generating HTML report")
         await generate_html_report(batch_name, compare_with_ai)
 

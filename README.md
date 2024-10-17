@@ -10,9 +10,9 @@ PLCT Server aims to provide the reference PLCT platform implementation suitable 
 
 ## Install
 
-*This doesn't work just now, but plct-serve will be publised on PYPI soon*
+*This doesn't work just now, but plct-serve will be published on PYPI soon*
 
-In youre active python environment just use the pip comand:
+In youre active python environment just use the pip command:
 
 ```
 pip install plct-serve
@@ -22,7 +22,7 @@ Depending on how you have installed Python and configured active python environm
 
 ## Running PLCT Server
 
-You can run the PLCT Server either localy from command line (using an embeded web server) or deployed on a regular web server.
+You can run the PLCT Server either locally from command line (using an embedded web server) or deployed on a regular web server.
 
 Ways to run localy from command line:
 - use the `plct-serve` shell command:  
@@ -52,7 +52,7 @@ Clone the repo into your local project folder.
 
 Create a Python virtual environment for the project and make it active. You may use Poetry to create the virtual environment, but you also can keep using whatever you want since Poetry works well in any active Python virtual environment.
 
-Take care to have the Python virtual environment acitvated before continue. If you use terminal/console integrated in your IDE, set it up to have an appropriate virutal environment activated.
+Take care to have the Python virtual environment activated before continue. If you use terminal/console integrated in your IDE, set it up to have an appropriate virtual environment activated.
 
 Do initial install/build using npm:
 
@@ -64,7 +64,7 @@ popd
 poetry install
 ```
 
-It's also okay if you have done `poetry install` previousy.
+It's also okay if you have done `poetry install` previously.
 
 ## Run server in the development environment
 
@@ -74,7 +74,7 @@ When using the `plct-serve` command during development, you'll need to restart t
 
 You can ran the dev-mode server on `http://localhost:8000` using the `dev-server.cmd` or `dev-server.sh` script (depending on your OS). When run this way, the server will do live-reload on any change in the `plct_server` package.
 
-The *dev-server* script does't support arguments, but you may edit the `dev-server.json` file instaed. When you run the *dev-server* script first time, the `dev-server.json` file will be created as a copy of `dev-server.sample.json`. For more details on config options, refer to the [PLCT Server configuration](doc/config.md).
+The *dev-server* script does't support arguments, but you may edit the `dev-server.json` file instead. When you run the *dev-server* script first time, the `dev-server.json` file will be created as a copy of `dev-server.sample.json`. For more details on config options, refer to the [PLCT Server configuration](doc/config.md).
 
 If you also require live reload for the React front-end, you can run the front-end server on `http://localhost:3000` by using the `npm start` command in the `front-app` folder.
 
@@ -86,13 +86,43 @@ By using both the dev-mode server and the front-end server, you can achieve live
 
 The `plct_server` folder the Python package with a FastAPI based server and the `front-app` folder contains a React front-end. 
 
-The `npm run build` command copies the `front-app\build` folder into `plct_server\front-app\build`. So, the FastAPI server servs both minimized bundles of the React front-end and the back-end API. FastAPI also serves some other web pages beyond th React front-end. 
+The `npm run build` command copies the `front-app\build` folder into `plct_server\front-app\build`. So, the FastAPI server serves both minimized bundles of the React front-end and the back-end API. FastAPI also serves some other web pages beyond th React front-end. 
 
 Thus, the architecture combines a single-page application (SPA) and server-side rendering within a single server, while maintaining simplicity from the end-user's perspective.
 
 ## Batch Review Command
 
-You can use the `batch-review` command to review conversation batches. This command helps in running batch reviews of conversations, setting benchmarks, and generating comparison reports.
+You can use the `batch-review` command to review conversation in batches. This command helps in comparing the performance of the AI assistant between updates. The report will be generated in an html file where you can compare and evaluate the difference in the answers you get to the same `conversation`.
+
+### What is a Conversation?
+
+`Conversation` is a snapshot of an interaction between a user and the AI assistant. Here is an example of a conversation instance: 
+
+
+```json
+[
+    {
+        "history": [
+            [
+                "History item #1",
+                "History item #2"
+            ],
+            [
+                "History item #3",
+                "History item #4"
+            ]
+        ],
+        "query": "User query",
+        "response": "",
+        "benchmark_response": "Benchmark response",
+        "course_key": "course_key",
+        "activity_key": "activity_key",
+        "feedback": 0,
+        "model": "gpt-4o"
+    }
+]
+
+```
 
 Ways to run the command:
 - use the `plct-serve` shell command:  
@@ -105,7 +135,6 @@ Ways to run the command:
   ```
 
 
-
 **OPTIONS:**
 - `-a`, `--ai-context`: Folder with AI context
 - `-n`, `--batch-name`: Batch name (default: a newly generated UUID)
@@ -113,6 +142,8 @@ Ways to run the command:
 - `-v`, `--verbose`: Enable verbose logging
 - `-c`, `--compare-with-ai`: Compare responses with AI
 - `-d`, `--conversation-dir`: Directory holding pre-arranged conversations (default: `eval/conversations/default`)
+- `-m`, `--model` : Model to be used in every conversation instance. If not given the conversations will be done by the default model or the model defined in the conversation instance
+- `-nr`, `--no-report` : Optionally you can disable the creation of the report
 
 **Example:**
 
@@ -121,29 +152,6 @@ plct batch-review -n test -v
 ```
 
 
-This command will configure the server, run the batch prompts for conversations and generate an HTML report(`eval/result/test/`) comparing the responses.
+This command will configure the server, run the batch prompts for conversations and generate an HTML report(`eval/result`) comparing the responses.
 
-The default conversations can be found in `eval/results/test/report.html`. You can group up sets of conversations into a single json file. Here is an example:
-
-```json
-[
-	{
-		"history": [
-			[
-				"History item #1",
-				"History item #2"
-			],
-            [
-				"History item #3",
-				"History item #4"
-            ]
-		],
-		"query": "Query",
-		"response": "",
-		"benchmark_response": "Benchmark response",
-		"course_key": "course_key",
-		"activity_key": "activity_key",
-		"feedback": 0
-	}
-]
-```
+The default conversations can be found in `eval/conversations/default`. You can group sets of conversations into a single JSON file or split them into multiple files within the same directory.
