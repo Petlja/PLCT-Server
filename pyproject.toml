@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "plct-server"
-version = "0.2.0"
+version = "0.2.2"
 description = ""
 authors = ["Nebojsa Vasiljevic <nebojsa.vasiljevic@gmail.com>"]
 license = "MIT"
@@ -32,6 +32,9 @@ zstandard = "^0.22.0"
 numpy = "^1.26.4"
 markdown-it-py = "^3.0.0"
 tiktoken = "^0.7.0"
+
+[tool.poetry.group.dev.dependencies]
+pypandoc = "^1.13"
 
 [build-system]
 requires = ["poetry-core", "setuptools"]

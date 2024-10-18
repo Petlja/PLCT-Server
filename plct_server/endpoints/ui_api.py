@@ -39,7 +39,6 @@ async def stream_response(answer, condensed_history, followup_questions) -> Asyn
         yield chunk.encode('utf-8')
 
 logger = logging.getLogger(__name__)
-OPENAI_API_KEY = os.environ["CHATAI_OPENAI_API_KEY"]
 
 
 @router.get("/api/chat")

@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from enum import Enum
 from urllib.parse import urljoin, urlparse
 import json
 from typing import Sequence, Optional
@@ -6,7 +7,7 @@ import httpx
 from plct_cli.project_config import get_project_config, ProjectConfig, ProjectConfigError
 import os
 import glob
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from click import UsageError
 import logging
@@ -29,7 +30,7 @@ class ConfigOptions(BaseSettings):
     content_url: str | None = None
     course_paths: Sequence[str] = []
 
-    @validator('course_paths', pre=True)
+    @field_validator('course_paths', mode='before')
     def split_string(cls, v):
         if isinstance(v, str):
             l = [s.strip() for s in v.split(',')]
@@ -41,6 +42,7 @@ class ConfigOptions(BaseSettings):
     ai_ctx_url: str | None = None
     verbose: bool | None = None
     api_key: str | None = None
+    azure_default_ai_endpoint: str | None = None
 
 class ServerContent:
 
@@ -85,38 +87,45 @@ def get_server_content() -> ServerContent:
         raise ValueError("Content configuration not initialized.")
     return _server_content
 
-def configure(*, course_urls: tuple[str] = None, verbose: bool = None,
-              ai_ctx_url: str = None) -> None:
+def configure(*, course_urls: tuple[str] = None, config_file: str = None, verbose: bool = None,
+              ai_ctx_url: str = None, azure_default_ai_endpoint: str = None) -> None:
+    logger.debug(f"verbose: {verbose}")
+    if verbose:
+        logging.getLogger().setLevel(logging.DEBUG)
 
-    config_file = os.environ.get("PLCT_SERVER_CONFIG_FILE")
     conf: ConfigOptions = None
-    if config_file:
-        cfg_parsed_url = urlparse(config_file)
-        config_text: str = None
+    cfg_file = config_file or os.environ.get("PLCT_SERVER_CONFIG_FILE")
+    if cfg_file:
+        logger.debug(f"Loading configuration file '{cfg_file}'")
+        cfg_parsed_url = urlparse(cfg_file)
+        cfg_text: str = None
         if cfg_parsed_url.scheme == "http" or cfg_parsed_url.scheme == "https":
             try:
-                config_text = httpx.get(config_file).text
+                cfg_text = httpx.get(cfg_file).text
             except httpx.RequestError as e:
                 # Handle request errors (e.g., network issues)
-                logger.error(f"Error loading the configuration file '{config_file}': " 
+                logger.error(f"Error loading the configuration file '{cfg_file}': " 
                              f"HTTP request error: {e}")
             except httpx.HTTPStatusError as e:
                 # Handle HTTP status errors (e.g., 404, 500)
-                logger.error(f"Error loading the configuration file '{config_file}': "
-                             "HTTP status error: {e.response.status_code}")
+                logger.error(f"Error loading the configuration file '{cfg_file}': "
+                             f"HTTP status error: {e.response.status_code}")
         else:
             if cfg_parsed_url.scheme == "file":
                 fname = cfg_parsed_url.path
             elif cfg_parsed_url.scheme == "":
-                fname = config_file
+                fname = cfg_file
             else:
-                raise ValueError(f"Error loading the configuration file '{config_file}': "
-                                 f"unsupported scheme {cfg_parsed_url.scheme}.")
-            config_text = read_str(fname)
-        if config_text is not None:
+                logger.error(f"Error loading the configuration file '{cfg_file}': "
+                             f"unsupported scheme {cfg_parsed_url.scheme}.")
             try:
-                config_dict = json.loads(config_text)
-                conf = ConfigOptions(**config_dict)
+                cfg_text = read_str(fname)
+            except OSError as e:
+                logger.error(f"Error loading the configuration file '{cfg_file}': {e}")
+        if cfg_text is not None:
+            try:
+                cfg_dict = json.loads(cfg_text)
+                conf = ConfigOptions(**cfg_dict)
                 if cfg_parsed_url.scheme == "":
                     cfg_parsed_url = cfg_parsed_url._replace(
                         scheme="file",
@@ -125,24 +134,24 @@ def configure(*, course_urls: tuple[str] = None, verbose: bool = None,
                 conf.content_url = urljoin(cfg_url, conf.content_url)
                 conf.ai_ctx_url = urljoin(cfg_url, conf.ai_ctx_url)
             except (OSError, ValueError, TypeError)as e:
-                logger.error(f"Error loading the configuration file '{config_file}': {e}")
-    else: 
-        logger.info("The environvent variable PLCT_SERVER_CONFIG_FILE is not set.")
+                logger.error(f"Error loading the configuration file '{cfg_file}': {e}")
     if conf is None:
         conf = ConfigOptions()
     if course_urls:
         conf.course_urls = course_urls
     if ai_ctx_url:
         conf.ai_ctx_url = ai_ctx_url
-    if verbose is not None:
+    if verbose:
         conf.verbose = verbose
+    if azure_default_ai_endpoint:
+        conf.azure_default_ai_endpoint = azure_default_ai_endpoint
     if conf.verbose:
         logging.basicConfig(level=logging.DEBUG)
     logger.debug(f"ConfigOptions: {conf}")
     global _server_content
     _server_content = ServerContent(conf)
     if conf.ai_ctx_url:
-        engine.init(conf.ai_ctx_url)
+        engine.init(ai_ctx_url=conf.ai_ctx_url, azure_default_ai_endpoint=conf.azure_default_ai_endpoint)
     
 
 
