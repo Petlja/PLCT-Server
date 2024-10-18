@@ -133,7 +133,7 @@ Use the `ai_ctx_url` key. Example:
 
 Relative paths are considered relative to the folder of the configuration file. Supported URL schemes are `http`, `https` and `file`.
 
-## RAG API
+## RAG API key
 
 PLCT server implements the Retrieval Augmented Generation (RAG) REST API. To enable access to the API, you need to specify an API key.
 
@@ -148,6 +148,10 @@ Use the `api_key` key. Example:
 ```
 
 The API key in the above example is randomly generated SHA-256 hash.
+
+### environment variables
+
+Use the `PLCT_API_KEY` environment variable to set your api key.
 
 ## OpenAI API keys
 
@@ -178,7 +182,7 @@ Use the `azure_default_ai_endpoint` string for default Azure OpenAI Service. Exa
 }
 ```
 
-Once the Azure OpenAI Service endpoint is provided, ensure that you set up your Azure environment with the correct models. This includes specifying the model names, deployment names, and API versions that you will use. You can modify or reference the `MODEL_CONFIGS`, located in the PLCT Server configuration file [`plct_server.ai.conf`](https://github.com/Petlja/PLCT-Server/blob/main/plct_server/ai/conf.py)
+Once the Azure OpenAI Service endpoint is provided, ensure that you set up your Azure environment with the correct models. This includes specifying the model names, deployment names, and API versions that you will use. You can modify or reference the `MODEL_CONFIGS`, located in the PLCT Server configuration module [`plct_server.ai.conf`](https://github.com/Petlja/PLCT-Server/blob/main/plct_server/ai/conf.py)
 
 
 ```python
