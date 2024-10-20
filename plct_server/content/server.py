@@ -1,25 +1,23 @@
-from dataclasses import dataclass
-from enum import Enum
-from urllib.parse import urljoin, urlparse
 import json
-from typing import Sequence, Optional
 import httpx
-from plct_cli.project_config import get_project_config, ProjectConfig, ProjectConfigError
 import os
-import glob
-from pydantic import BaseModel, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from click import UsageError
 import logging
 
-import yaml
 
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import Sequence
+from urllib.parse import urljoin, urlparse
+from plct_server.ai.client import AiClientFactory
+from plct_server.ai.conf import ModelProvider
 from .fileset import FileSet
-
-from ..ioutils import read_json, read_str
-
+from ..ioutils import  read_str
 from .course import CourseContent, TocItem, load_course
 from ..ai import engine
+
+
+ENV_NAME_OPENAI_API_KEY = "CHATAI_OPENAI_API_KEY"
+ENV_NAME_AZURE_API_KEY = "CHATAI_AZURE_API_KEY"
 
 logger = logging.getLogger(__name__)
 
@@ -150,8 +148,26 @@ def configure(*, course_urls: tuple[str] = None, config_file: str = None, verbos
     logger.debug(f"ConfigOptions: {conf}")
     global _server_content
     _server_content = ServerContent(conf)
-    if conf.ai_ctx_url:
-        engine.init(ai_ctx_url=conf.ai_ctx_url, azure_default_ai_endpoint=conf.azure_default_ai_endpoint)
+
+    azure_api_key = os.getenv(ENV_NAME_AZURE_API_KEY)
+    openai_api_key = os.getenv(ENV_NAME_OPENAI_API_KEY)
     
+    if azure_api_key:
+        provider = ModelProvider.AZURE
+        api_key = azure_api_key
+    elif openai_api_key:
+        provider = ModelProvider.OPENAI
+        api_key = openai_api_key
+    else:
+        raise ValueError("API key not found in environment variables")
+    
+    client_factory = AiClientFactory(
+        provider=provider,
+        api_key=api_key,
+        azure_default_ai_endpoint=conf.azure_default_ai_endpoint
+    )
+
+    if conf.ai_ctx_url:
+        engine.init(ai_ctx_url=conf.ai_ctx_url, client_factory=client_factory)
 
 
