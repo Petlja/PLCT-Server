@@ -24,6 +24,8 @@ Classify the user's question as referring to a course, the current lecture, the 
 CONVERSATION_CONTINUATION_DESCRIPTION = """
 Two follow-up suggestions that the teacher can click to have the assistant perform the action on their behalf.
 
+The follow-up suggestions should be in the same language as the teacher's question.
+
 Take into account history and avoid repeating the suggestions that have been used by the teacher, they will show in the history of the conversation.
 
 These suggestions should be **concise and actionable**—representing things the assistant can do for the teacher.
@@ -41,8 +43,6 @@ Examples of follow-up suggestions:
     - Demonstrate how to apply "{current topic}" in practice.
 
 **Avoid verbose descriptions or questions.** The suggestions should be brief and phrased as direct actions.
-
-Always answer in the language of the question.
 """
 
 

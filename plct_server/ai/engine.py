@@ -1,4 +1,3 @@
-import os
 import logging
 import chromadb
 import tiktoken
@@ -8,7 +7,9 @@ from typing import Any, AsyncIterator, Coroutine, Union
 from openai import AsyncAzureOpenAI, AsyncOpenAI
 from openai.resources.chat.completions import ChatCompletion
 
-from .conf import MODEL_CONFIGS, ModelConfig, ModelProvider
+from plct_server.ai.client import AiClientFactory
+
+from .conf import MODEL_CONFIGS, ModelConfig
 from .context_dataset import ContextDataset
 from .query_context import QueryContext, QueryError
 from .structured_outputs.query_classification import TOOLS_CHOICE_DEF, TOOLS_DEF, Classification, StructuredOutputResponse, parse_query_classification
@@ -19,11 +20,11 @@ logger = logging.getLogger(__name__)
 
 ai_engine: "AiEngine" = None
 
-def init(*, ai_ctx_url: str, azure_default_ai_endpoint: str):
+def init(*, ai_ctx_url: str, client_factory: AiClientFactory) -> None:
     global ai_engine
     if ai_engine is None:
         ai_engine = AiEngine(ai_ctx_url=ai_ctx_url, 
-                             azure_default_ai_endpoint=azure_default_ai_endpoint )
+                             client_factory=client_factory)
     else:
         raise ValueError(f"{__name__} already initialized")
     
@@ -52,16 +53,13 @@ PETLJA_DOCS_COURSE_KEY = "petlja-docs"
 
 
 class AiEngine:
-    def __init__(self, *, ai_ctx_url: str, azure_default_ai_endpoint : str | None):
+    def __init__(self, *, ai_ctx_url: str, client_factory: AiClientFactory):
         logger.debug(f"ai_ctx_url: {ai_ctx_url}")
+        self.client_factory = client_factory
         self.ctx_data = ContextDataset(ai_ctx_url)
         self.ch_cli = chromadb.Client()
         self.encoding : Encoding = tiktoken.encoding_for_model(EMBEDDING_MODEL) 
         self._load_embeddings()
-        self.default_chat_config = CHAT_MODEL
-        self.default_embedding_config = EMBEDDING_MODEL
-        self.azure_default_ai_endpoint = azure_default_ai_endpoint
-        self._get_provider()
 
 
     def _load_embeddings(self):
@@ -117,25 +115,12 @@ class AiEngine:
     
     def _get_async_openai_client(self, requested_model: str | None) -> Union[AsyncOpenAI, AsyncAzureOpenAI]:
         logger.debug(f"Creating AI client")
-        api_key = os.environ[self.env_name]
-        if self.llm_provider == ModelProvider.OPENAI:
-            logger.debug(f"Using default OpenAI APIw ith key from {self.env_name}")
-            return AsyncOpenAI(api_key=api_key)
-        else:          
-            modelConfig = self._get_model_config(requested_model)
-            logger.debug(f"Using Azure OpenAI API for model {modelConfig.name} with key from {self.env_name}"
-                         f" and endpoint {modelConfig}")
-            
-            return AsyncAzureOpenAI(
-                api_key=api_key,
-                azure_endpoint= self.azure_default_ai_endpoint,
-                azure_deployment=modelConfig.azure_deployment_name,
-                api_version=modelConfig.azure_api_version
-            )
+        model_config = self._get_model_config(requested_model)
+        return self.client_factory.get_client(model_config)
 
     async def _handle_query_submission(self, message: list[dict[str, str]], max_tokens: int, stream : bool,
                                         model_name : str = None) -> Union[str, Coroutine[Any, Any, ChatCompletion]]:
-        model = model_name or self.default_chat_config
+        model = model_name or CHAT_MODEL
         client = self._get_async_openai_client(
             requested_model = model
         )
@@ -172,9 +157,9 @@ class AiEngine:
 
     async def _create_embedding(self, input: str, encoding_format: str, dimensions: int) -> str:
         client = self._get_async_openai_client(
-            requested_model= self.default_embedding_config
+            requested_model= EMBEDDING_MODEL
         )
-        config = self._get_model_config(self.default_embedding_config)
+        config = self._get_model_config(EMBEDDING_MODEL)
         token_limit = config.context_size
 
         if len(self.encoding.encode(input)) > token_limit:
@@ -245,7 +230,7 @@ class AiEngine:
     async def preprocess_query(self,query: str, history: list[dict[str, str]], course_key: str, 
                                activity_key: str, condensed_history: str, model_name : str = None) -> StructuredOutputResponse:
         
-        model = model_name or self.default_chat_config
+        model = model_name or CHAT_MODEL
         client = self._get_async_openai_client(
             requested_model = model
         )
