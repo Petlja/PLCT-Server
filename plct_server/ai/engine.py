@@ -134,19 +134,23 @@ class AiEngine:
         
         token_limit = config.context_size
 
-        if encode_message_content(message) > token_limit - max_tokens:
+        message_tokens = encode_message_content(message)
+        if message_tokens > token_limit - max_tokens:
             raise QueryError((
-                f"Context too large for model. Tokens used: {encode_message_content(message)}",
+                f"Context too large for model. Tokens used: {message_tokens}",
                 f"Response tokens: {max_tokens}",
                 f"Model token limit: {token_limit}"
             ))
+        else:
+            logger.info(f"Tokens used in message: {message_tokens}")
 
         completion = await client.chat.completions.create(
             model=config.name,
             messages=message,
             stream=stream,
             max_tokens=max_tokens,
-            temperature=0
+            temperature=0,
+            extra_body= config.extra_body
         )
 
         if stream:

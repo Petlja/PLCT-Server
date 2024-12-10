@@ -11,6 +11,7 @@ class ModelConfig(BaseModel):
     azure_api_version: str
     context_size: int
     type : str
+    extra_body : dict = {}
 
 MODEL_CONFIGS = {
     "gpt-4o-mini": ModelConfig(
@@ -33,5 +34,15 @@ MODEL_CONFIGS = {
         azure_api_version="2023-05-15",
         type = "embedding",
         context_size=8_191
+    ),
+    "meta-llama/Meta-Llama-3.1-70B" : ModelConfig(
+        name="meta-llama/Meta-Llama-3.1-70B",
+        azure_deployment_name="", 
+        azure_api_version="",
+        type = "chat",
+        context_size=128_000,
+        extra_body = {
+                "stop_token_ids": [128001,128008,128009]
+            }
     )
 }

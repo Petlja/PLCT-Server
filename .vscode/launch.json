@@ -14,7 +14,9 @@
             },
             "args": [
                 "plct_server.ui_main:app",
-                "--reload"
+                "--reload",
+                "--port",
+                "8001"
             ],
             "jinja": true
         }

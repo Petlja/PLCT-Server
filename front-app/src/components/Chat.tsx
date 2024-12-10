@@ -244,6 +244,7 @@ export function Chat() {
                 <select className="form-select" value={model} onChange={(e) => setModel(e.target.value)}>
                     <option value="gpt-4o">gpt-4o</option>
                     <option value="gpt-4o-mini">gpt-4o-mini</option>
+                    <option value="meta-llama/Meta-Llama-3.1-70B">llama-3.1-70b</option>
                 </select>
                 <br />
                 <MainContainer responsive>
