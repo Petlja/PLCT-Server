@@ -12,7 +12,7 @@ from plct_server.ai.client import AiClientFactory
 from .conf import MODEL_CONFIGS, ModelConfig
 from .context_dataset import ContextDataset
 from .query_context import QueryContext, QueryError
-from .structured_outputs.query_classification import TOOLS_CHOICE_DEF, TOOLS_DEF, Classification, StructuredOutputResponse, parse_query_classification
+from .structured_outputs.query_classification import TOOLS_CHOICE_DEF, TOOLS_DEF, Classification, QueryLanguage, StructuredOutputResponse, get_answer_language, parse_query_classification
 
 from .prompt_templates import *
 
@@ -297,7 +297,7 @@ class AiEngine:
                 course_summary=course_summary,
                 lesson_summary=lesson_summary
             )
-        system_message = system_message_template + summary_segment + condensed_history_segment + rag_segment
+        system_message = system_message_template.format(answer_language = get_answer_language(structured_output)) + summary_segment + condensed_history_segment + rag_segment
 
         if query_context:
             query_context.add_system_message_parts(

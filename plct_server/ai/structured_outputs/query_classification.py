@@ -19,31 +19,23 @@ Classify the user's question as referring to a course, the current lecture, the 
 
 - **unsure** classification is used when you aren't sure how to classify the query.
 """
+
+CLASSIFY_LANGUAGE_DESCRIPTION = """
+Classify the language of the user's question as Serbian Cyrillic, Serbian Latin, English, or other.
+"""
                         
 
 CONVERSATION_CONTINUATION_DESCRIPTION = """
-Two follow-up suggestions that the teacher can click to have the assistant perform the action on their behalf.
-
-The follow-up suggestions should be in the same language as the teacher's question.
-
-Take into account history and avoid repeating the suggestions that have been used by the teacher, they will show in the history of the conversation.
-
-These suggestions should be **concise and actionable**—representing things the assistant can do for the teacher.
-
-Focus on providing clear, **action-oriented commands** the assistant can execute directly when clicked. 
-
-Never ask the teacher to do something themselves, such as "Can you please...?" or "Would you mind...?" or "Do you want to...?" or "Could you...?".
-
-Examples of follow-up suggestions:
-    - Create a test for the "{current lecture}".
-    - Create a homework assignment for the "{current lecture}".
-    - Show an example of "{current topic}".
-    - Break down the "{current concept}" into simpler terms.
-    - Create a quiz on "{current concept}".
-    - Demonstrate how to apply "{current topic}" in practice.
-
-**Avoid verbose descriptions or questions.** The suggestions should be brief and phrased as direct actions.
+You are helping a teacher by suggesting follow-up questions they might ask an AI teaching assistant.
+The teacher relies on the assistant to generate examples, tests, homework, and explanations.
+Your job is to think about what the teacher might ask next, phrased as a question the teacher would say, not as something the assistant would do.
+Keep the questions on the short side up to 100 characters.
+Ensure that these follow-up questions:
+- Are in the same language and script as the teacher's original question.
+- Are concise, actionable, and related to the topic the teacher is asking about.
+- Do not repeat any questions the teacher already asked or suggestions already made in this conversation.
 """
+
 
 
 TOOLS_CHOICE_DEF : dict[str, object] = {
@@ -65,7 +57,12 @@ TOOLS_DEF : list[dict[str, object]] = [
                     "properties": {
                         "restated_question": {
                             "type": "string",
-                            "description": "The restated question, elaborated by the model. In the same language as the original question."
+                            "description": "Put your self in the teacher's shoes and rephrase the question in a way that is clear and concise."
+                        },
+                        "classify_language": {
+                            "type": "string", 
+                            "enum": ["sr-Cyrl", "sr-Latn", "en", "other"],
+                            "description": CLASSIFY_LANGUAGE_DESCRIPTION
                         },
                         "classify_query": {
                             "type": "string", 
@@ -89,7 +86,7 @@ TOOLS_DEF : list[dict[str, object]] = [
                         }
 
                    },
-                    "required": ["restated_question", "classify_query", "possible_conversation_continuation"], 
+                    "required": ["restated_question", "classify_language", "classify_query", "possible_conversation_continuation"], 
                     "additionalProperties" : False
                 },
             },
@@ -102,10 +99,33 @@ class Classification(Enum):
     PLATFORM = "platform"
     UNSURE = "unsure"
 
+class QueryLanguage(Enum):
+    SR_CYRL = "sr-Cyrl"
+    SR_LATN = "sr-Latn"
+    EN = "en"
+    DEFAULT = "default"
+
+LANGUAGE_RESPONSES : dict[QueryLanguage, str] = {
+    QueryLanguage.SR_CYRL: "Answer in Serbian Cyrillic script.",
+    QueryLanguage.SR_LATN: "Answer in Serbian Latin script.",
+    QueryLanguage.EN: "Answer in English.",
+    QueryLanguage.DEFAULT: "Answer in the same language as the question."
+}
+
 class StructuredOutputResponse(BaseModel):
     classification: Classification
     restated_question: str
     followup_questions: list[str]
+    query_language: QueryLanguage
+
+def get_answer_language(structured_output : StructuredOutputResponse) -> str:
+    return LANGUAGE_RESPONSES.get(
+        structured_output.query_language,
+        QueryLanguage.DEFAULT
+    )
+
+
+
 
 class QueryClassificationError(Exception):
     pass
@@ -130,7 +150,9 @@ def parse_query_classification(response : object, query :str) -> StructuredOutpu
             return StructuredOutputResponse(
                 restated_question=arguments_dict.get("restated_question", query),
                 classification=Classification(arguments_dict.get("classify_query", "unsure")),
-                followup_questions=followup_questions
+                followup_questions=followup_questions,
+                query_language=QueryLanguage(arguments_dict.get("classify_language", "default"))
+
             )
 
         raise QueryClassificationError(f"Unexpected finish reason: {finish_reason}")
@@ -140,7 +162,8 @@ def parse_query_classification(response : object, query :str) -> StructuredOutpu
         return StructuredOutputResponse(
             restated_question=query,
             classification=Classification.UNSURE,
-            followup_questions=[]
+            followup_questions=[],
+            query_language=QueryLanguage.DEFAULT
         )
 
     
