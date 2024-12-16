@@ -35,7 +35,7 @@ class ChunkMetadata(BaseModel):
 
 class ContextDatasetBuilder:
     base_dir: str
-    
+    active_chunks = set()
     course_dict: dict[str, CourseSummary]
 
     def __init__(self, base_dir: str):
@@ -69,18 +69,32 @@ class ContextDatasetBuilder:
                      embeding_model:str, embeding_sizes: list[int], oa_cln: OpenAI | AzureOpenAI):
         str_for_hash = "\n".join([chunk_meta.course_key, chunk_text]).encode('utf-8')
         chunk_hash = hashlib.sha256(str_for_hash).hexdigest()
-        logger.info(f"Hash: {chunk_hash}, TextLengt: {len(chunk_text)}")
         hash_prefix = chunk_hash[:2]
         chunk_dir = os.path.join(self.base_dir, "chunks", hash_prefix)
-        os.makedirs(chunk_dir, exist_ok=True)
         chunk_text_path = os.path.join(chunk_dir, f"{chunk_hash}.txt")
         metadata_path = os.path.join(chunk_dir, f"{chunk_hash}.json")
+        self.active_chunks.add(chunk_hash)
+        
+        logger.info(f"Hash: {chunk_hash}, TextLengt: {len(chunk_text)}")
+        missing_sizes = []
+        if os.path.exists(chunk_text_path):
+            missing_sizes = [
+                size for size in embeding_sizes
+                if not os.path.exists(os.path.join(chunk_dir, f"{chunk_hash}-{embeding_model}-{size}.json"))
+            ]
+            if not missing_sizes:
+                chunk_meta_json_str = chunk_meta.model_dump_json(indent=2)
+                write_str(metadata_path, chunk_meta_json_str)
+                logger.info(f"Chunk {chunk_hash} already exists")
+                return
+
+        os.makedirs(chunk_dir, exist_ok=True)
         if not os.path.exists(chunk_text_path):
             write_str(chunk_text_path, chunk_text)
             chunk_meta_json_str = chunk_meta.model_dump_json(indent=2)
             write_str(metadata_path, chunk_meta_json_str)
 
-        for embeding_size in embeding_sizes:
+        for embeding_size in missing_sizes:
             embeding_path = os.path.join(chunk_dir, f"{chunk_hash}-{embeding_model}-{embeding_size}.json")
             if not os.path.exists(embeding_path):
                 response = oa_cln.embeddings.create(
@@ -98,13 +112,12 @@ class ContextDatasetBuilder:
             course_summary_json = course_summary.model_dump_json(indent=2)
             write_str(json_file, course_summary_json)
 
-    def update_index(self):
+    def update_index(self, delete_inactive_chunks: bool):
         course_keys = []
-        cpurse_pattern = os.path.join(self.base_dir, "*/summary.json")
-        for json_path in glob.glob(cpurse_pattern):
-            if os.path.isfile(json_path):
-                course_summary = CourseSummary.model_validate_json(read_str(json_path))
-                course_keys.append(course_summary.course_key)
+        for course_key, course_summary in self.course_dict.items():
+            path = os.path.join(self.base_dir, course_key, "summary.json")
+            course_summary = CourseSummary.model_validate_json(read_str(path))
+            course_keys.append(course_summary.course_key)
 
         chunk_embedding_pattern = os.path.join(self.base_dir, 
                 f'chunks/*/*-*.json')
@@ -115,6 +128,14 @@ class ContextDatasetBuilder:
             dirname = os.path.dirname(path)
             chunk_hash = filename[:64]
             embedding_type = filename[65:].split('.')[0]
+
+            if chunk_hash not in self.active_chunks:
+                logger.info(f"Chunk {chunk_hash} is not active")
+                if delete_inactive_chunks:
+                    os.remove(path)
+                    os.remove(os.path.join(dirname, f"{chunk_hash}.txt"))
+                    os.remove(os.path.join(dirname, f"{chunk_hash}.json"))
+                continue
 
             emb_data = chunk_dict.get(embedding_type)
             if emb_data is None:
