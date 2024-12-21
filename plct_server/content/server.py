@@ -87,10 +87,6 @@ def get_server_content() -> ServerContent:
 
 def configure(*, course_urls: tuple[str] = None, config_file: str = None, verbose: bool = None,
               ai_ctx_url: str = None, azure_default_ai_endpoint: str = None) -> None:
-    logger.debug(f"verbose: {verbose}")
-    if verbose:
-        logging.getLogger().setLevel(logging.DEBUG)
-
     conf: ConfigOptions = None
     cfg_file = config_file or os.environ.get("PLCT_SERVER_CONFIG_FILE")
     if cfg_file:
@@ -144,7 +140,13 @@ def configure(*, course_urls: tuple[str] = None, config_file: str = None, verbos
     if azure_default_ai_endpoint:
         conf.azure_default_ai_endpoint = azure_default_ai_endpoint
     if conf.verbose:
-        logging.basicConfig(level=logging.DEBUG)
+        logging.basicConfig(level=logging.DEBUG,
+                            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        logging.getLogger().setLevel(logging.DEBUG)
+    else:
+        logging.basicConfig(level=logging.INFO,
+                            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        logging.getLogger().setLevel(logging.INFO)
     logger.debug(f"ConfigOptions: {conf}")
     global _server_content
     _server_content = ServerContent(conf)
