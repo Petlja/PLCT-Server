@@ -14,7 +14,7 @@ class AiClientFactory:
         self.azure_default_ai_endpoint = azure_default_ai_endpoint
 
     def get_client(self, model_config: ModelConfig) -> Union[AsyncOpenAI, AsyncAzureOpenAI]:
-        if model_config.name == "meta-llama/Meta-Llama-3.1-70B":
+        if model_config.name == "meta-llama/Llama-3.1-70B-Instruct":
             logger.debug(f"Using Llama-3.1-70B model")
             return AsyncOpenAI(api_key="EMPTY", base_url="http://localhost:8000/v1")
         if self.provider == ModelProvider.OPENAI:

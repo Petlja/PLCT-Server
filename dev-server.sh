@@ -5,4 +5,4 @@ if [ ! -f dev-server.json ]; then
 fi
 
 export PLCT_SERVER_CONFIG_FILE=dev-server.json
-uvicorn plct_server.ui_main:app --reload --host "127.0.0.1" --port 8000
+uvicorn plct_server.ui_main:app --reload --host "127.0.0.1" --port 9000

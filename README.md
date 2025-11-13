@@ -72,13 +72,13 @@ You can run the PLCT Server using `plct-serve` command as it is explained in the
 
 When using the `plct-serve` command during development, you'll need to restart the server for any changes to take effect. Additionally, when you make changes to the React front-end, you need to execute `npm install`.
 
-You can ran the dev-mode server on `http://localhost:8000` using the `dev-server.cmd` or `dev-server.sh` script (depending on your OS). When run this way, the server will do live-reload on any change in the `plct_server` package.
+You can ran the dev-mode server on `http://localhost:9000` using the `dev-server.cmd` or `dev-server.sh` script (depending on your OS). When run this way, the server will do live-reload on any change in the `plct_server` package.
 
 The *dev-server* script does't support arguments, but you may edit the `dev-server.json` file instead. When you run the *dev-server* script first time, the `dev-server.json` file will be created as a copy of `dev-server.sample.json`. For more details on config options, refer to the [PLCT Server configuration](doc/config.md).
 
 If you also require live reload for the React front-end, you can run the front-end server on `http://localhost:3000` by using the `npm start` command in the `front-app` folder.
 
-Through the front-end URL, you have full access to the PLCT Server because the front-end server forwards all non-front-end requests to `http://localhost:8000`.
+Through the front-end URL, you have full access to the PLCT Server because the front-end server forwards all non-front-end requests to `http://localhost:9000`.
 
 By using both the dev-mode server and the front-end server, you can achieve live reload for both the front-end and back-end changes.
 

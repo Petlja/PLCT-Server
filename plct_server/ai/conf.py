@@ -36,7 +36,7 @@ MODEL_CONFIGS = {
         context_size=8_191
     ),
     "meta-llama/Meta-Llama-3.1-70B" : ModelConfig(
-        name="meta-llama/Meta-Llama-3.1-70B",
+        name="meta-llama/Llama-3.1-70B-Instruct",
         azure_deployment_name="", 
         azure_api_version="",
         type = "chat",
