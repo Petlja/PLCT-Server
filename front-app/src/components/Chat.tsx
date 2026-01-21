@@ -245,7 +245,13 @@ export function Chat() {
                     <option value="gpt-4o">gpt-4o</option>
                     <option value="gpt-4o-mini">gpt-4o-mini</option>
                     <option value="meta-llama/Meta-Llama-3.1-70B">llama-3.1-70b</option>
-                </select>
+                    <option value="nvidia/Llama-3.3-70B-Instruct-FP8">llama-3.3-70B-FP8</option>
+                    <option value="Qwen/Qwen3-32B">qwen3-32b</option>
+                    <option value="Qwen/Qwen3-14B">qwen3-14b</option>
+                    <option value="Qwen/Qwen3-8B">qwen3-8b</option>
+
+                    
+                 </select>
                 <br />
                 <MainContainer responsive>
                     <ChatContainer>
