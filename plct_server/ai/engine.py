@@ -68,7 +68,7 @@ class AiEngine:
         logger.debug(f"Loading embeddings {EMBEDDING_MODEL}-{EMBEDDING_SIZE}")
         embeddings, ids, metadata = self.ctx_data.get_embeddings_data(EMBEDDING_MODEL, EMBEDDING_SIZE)
 
-        max_batch_size = self.ch_cli.max_batch_size
+        max_batch_size = self.ch_cli.get_max_batch_size()
         total_size = len(embeddings)
         logger.debug(f"Indexing embeddings {EMBEDDING_MODEL}-{EMBEDDING_SIZE} in batches of {max_batch_size}")
         for start_idx in range(0, total_size, max_batch_size):
