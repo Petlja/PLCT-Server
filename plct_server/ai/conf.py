@@ -4,6 +4,7 @@ from enum import Enum
 class ModelProvider(Enum):
     OPENAI = "openai"
     AZURE = "azure"
+    VLLM = "vllm"
 
 class ModelConfig(BaseModel):
     name: str
@@ -13,6 +14,7 @@ class ModelConfig(BaseModel):
     type : str
     extra_body : dict = {}
     vllm_url : str = None
+    provider : ModelProvider = None  # use default provider if None
 
 MODEL_CONFIGS = {
     "gpt-4o-mini": ModelConfig(
@@ -39,6 +41,7 @@ MODEL_CONFIGS = {
     "meta-llama/Meta-Llama-3.1-70B" : ModelConfig(
         name="meta-llama/Llama-3.1-70B-Instruct",
         vllm_url = "http://localhost:8000/v1",
+        provider = ModelProvider.VLLM,
         type = "chat",
         context_size=128_000,
         extra_body = {
@@ -49,6 +52,7 @@ MODEL_CONFIGS = {
     "nvidia/Llama-3.3-70B-Instruct-FP8" : ModelConfig(
         name="nvidia/Llama-3.3-70B-Instruct-FP8",
         vllm_url = "http://localhost:8000/v1",
+        provider = ModelProvider.VLLM,
         type = "chat",
         context_size=98_304
     ),
@@ -56,18 +60,21 @@ MODEL_CONFIGS = {
     "Qwen/Qwen3-32B" : ModelConfig(
         name="Qwen/Qwen3-32B",
         vllm_url = "http://localhost:8000/v1",
+        provider= ModelProvider.VLLM,
         type = "chat",
         context_size=32_768
     ),
     "Qwen/Qwen3-14B" : ModelConfig(
         name="Qwen/Qwen3-14B",
         vllm_url = "http://localhost:8000/v1",
+        provider= ModelProvider.VLLM,
         type = "chat",
         context_size=32_768
     ),
     "Qwen/Qwen3-8B" : ModelConfig(
         name="Qwen/Qwen3-8B",
         vllm_url = "http://localhost:8000/v1",
+        provider = ModelProvider.VLLM,
         type = "chat",
         context_size=32_768
     )

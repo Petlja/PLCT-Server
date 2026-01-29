@@ -18,6 +18,7 @@ from ..ai import engine
 
 ENV_NAME_OPENAI_API_KEY = "CHATAI_OPENAI_API_KEY"
 ENV_NAME_AZURE_API_KEY = "CHATAI_AZURE_API_KEY"
+ENV_NAME_VLLM_API_KEY = "CHATAI_VLLM_API_KEY"
 
 logger = logging.getLogger(__name__)
 
@@ -153,19 +154,22 @@ def configure(*, course_urls: tuple[str] = None, config_file: str = None, verbos
 
     azure_api_key = os.getenv(ENV_NAME_AZURE_API_KEY)
     openai_api_key = os.getenv(ENV_NAME_OPENAI_API_KEY)
+    vllm_api_key = os.getenv(ENV_NAME_VLLM_API_KEY)
     
     if azure_api_key:
-        provider = ModelProvider.AZURE
+        default_provider = ModelProvider.AZURE
         api_key = azure_api_key
     elif openai_api_key:
-        provider = ModelProvider.OPENAI
+        default_provider = ModelProvider.OPENAI
         api_key = openai_api_key
     else:
-        raise ValueError("API key not found in environment variables")
+        raise ValueError("Neither Azure nor OpenAI API key found in environment variables")
     
     client_factory = AiClientFactory(
-        provider=provider,
-        api_key=api_key,
+        default_provider=default_provider,
+        openai_api_key=openai_api_key,
+        azure_api_key=azure_api_key,
+        vllm_api_key=vllm_api_key,
         azure_default_ai_endpoint=conf.azure_default_ai_endpoint
     )
 
