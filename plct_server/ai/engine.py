@@ -43,8 +43,6 @@ def create_message(system : str, history: list[dict[str, str]], query) -> list[d
     messages.append({"role": "user", "content": query})
     return messages
 
-ENV_NAME_OPENAI_API_KEY = "CHATAI_OPENAI_API_KEY"
-ENV_NAME_AZURE_API_KEY = "CHATAI_AZURE_API_KEY"
 CHAT_MODEL = "gpt-4o-mini"
 EMBEDDING_MODEL = "text-embedding-3-large"
 EMBEDDING_SIZE = 1536
@@ -88,24 +86,6 @@ class AiEngine:
             )
 
         logger.debug(f"Embeddings loaded and indexed {EMBEDDING_MODEL}-{EMBEDDING_SIZE}")
-
-    def _get_provider(self) -> None:
-        azure_api_key = os.getenv(ENV_NAME_AZURE_API_KEY)
-        openai_api_key = os.getenv(ENV_NAME_OPENAI_API_KEY)
-
-        if azure_api_key:
-            if not self.azure_default_ai_endpoint:
-                raise ValueError("Azure endpoint not provided")
-            self.llm_provider = ModelProvider.AZURE
-            self.env_name = ENV_NAME_AZURE_API_KEY
-            return
-
-        if openai_api_key:
-            self.llm_provider = ModelProvider.OPENAI
-            self.env_name = ENV_NAME_OPENAI_API_KEY
-            return
-
-        raise ValueError("API key not found in environment variables")
 
     def _get_model_config(self, model_name: str) -> ModelConfig:
         conf = MODEL_CONFIGS.get(model_name)
