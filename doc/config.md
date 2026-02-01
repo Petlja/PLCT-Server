@@ -26,12 +26,12 @@ You don’t need to use the `plct-server` command line; instead, you can run the
 *Windows Command Prompt*
 ```
 SET PLCT_SERVER_CONFIG_FILE=dev-server.json
-uvicorn plct_server.ui_main:app --host 127.0.0.1 --port 8000
+uvicorn plct_server.ui_main:app --host 127.0.0.1 --port 9000
 ```
 *Bash shell*
 ```
 export PLCT_SERVER_CONFIG_FILE=dev-server.json
-uvicorn plct_server.ui_main:app --host 127.0.0.1 --port 8000
+uvicorn plct_server.ui_main:app --host 127.0.0.1 --port 9000
 ```
 
 
@@ -100,7 +100,7 @@ You may configure host and port the HTTP service should be bind to.
 
 Use `-h` or `--host` option to set the host and `-p` or `--port` option to set the port. Example:
 ```
-plct-serve -h 127.0.0.1 -p 8000
+plct-serve -h 127.0.0.1 -p 9000
 ```
 
 ### configuration file

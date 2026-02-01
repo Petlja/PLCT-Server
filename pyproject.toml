@@ -17,24 +17,23 @@ packages = [ { include = "plct_server" } ]
 [tool.poetry.dependencies]
 python = ">=3.10,<4.0"
 pydantic = ">=2.0,<3.0"
-fastapi = ">=0.109,<1.0"
+fastapi = ">=0.95,<1.0"
 uvicorn = ">=0.27,<1.0"
 rich = ">=13.0,<14.0"
 click = ">=8.0,<9.0"
 jinja2 = ">=3.0,<4.0"
 plct-cli = "*"
-openai = "^1.12.0"
-chromadb = "^0.4.24"
-httpx = "^0.27.0"
-aiofiles = "^23.2.1"
-pydantic-settings = "^2.2.1"
-zstandard = "^0.22.0"
-numpy = "^1.26.4"
-markdown-it-py = "^3.0.0"
-tiktoken = "^0.7.0"
+openai = "^2.16.0"
+chromadb = ">=1.4,<1.5"
+httpx = "^0.28.0"
+aiofiles = "^25.1.0"
+pydantic-settings = "^2.12.0"
+zstandard = "^0.25.0"
+markdown-it-py = "^4.0.0"
+tiktoken = "^0.12.0"
 
 [tool.poetry.group.dev.dependencies]
-pypandoc = "^1.13"
+pypandoc = "^1.16"
 
 [build-system]
 requires = ["poetry-core", "setuptools"]

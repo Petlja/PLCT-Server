@@ -5,7 +5,7 @@ import tiktoken
 from tiktoken import Encoding
 from typing import Any, AsyncIterator, Coroutine, Union
 from openai import AsyncAzureOpenAI, AsyncOpenAI
-from openai.resources.chat.completions import ChatCompletion
+from openai.types.chat import ChatCompletion
 
 from plct_server.ai.client import AiClientFactory
 
@@ -68,7 +68,7 @@ class AiEngine:
         logger.debug(f"Loading embeddings {EMBEDDING_MODEL}-{EMBEDDING_SIZE}")
         embeddings, ids, metadata = self.ctx_data.get_embeddings_data(EMBEDDING_MODEL, EMBEDDING_SIZE)
 
-        max_batch_size = self.ch_cli.max_batch_size
+        max_batch_size = self.ch_cli.get_max_batch_size()
         total_size = len(embeddings)
         logger.debug(f"Indexing embeddings {EMBEDDING_MODEL}-{EMBEDDING_SIZE} in batches of {max_batch_size}")
         for start_idx in range(0, total_size, max_batch_size):
@@ -114,19 +114,23 @@ class AiEngine:
         
         token_limit = config.context_size
 
-        if encode_message_content(message) > token_limit - max_tokens:
+        message_tokens = encode_message_content(message)
+        if message_tokens > token_limit - max_tokens:
             raise QueryError((
-                f"Context too large for model. Tokens used: {encode_message_content(message)}",
+                f"Context too large for model. Tokens used: {message_tokens}",
                 f"Response tokens: {max_tokens}",
                 f"Model token limit: {token_limit}"
             ))
+        else:
+            logger.info(f"Tokens used in message: {message_tokens}")
 
         completion = await client.chat.completions.create(
             model=config.name,
             messages=message,
             stream=stream,
             max_tokens=max_tokens,
-            temperature=0
+            temperature=0,
+            extra_body= config.extra_body
         )
 
         if stream:
