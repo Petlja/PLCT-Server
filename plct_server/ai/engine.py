@@ -5,7 +5,7 @@ import tiktoken
 from tiktoken import Encoding
 from typing import Any, AsyncIterator, Coroutine, Union
 from openai import AsyncAzureOpenAI, AsyncOpenAI
-from openai.resources.chat.completions import ChatCompletion
+from openai.types.chat import ChatCompletion
 
 from plct_server.ai.client import AiClientFactory
 
