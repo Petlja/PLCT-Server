@@ -1,0 +1,1 @@
+{"root":["./src/app.test.tsx","./src/app.tsx","./src/appcontext.tsx","./src/index.tsx","./src/react-app-env.d.ts","./src/reportwebvitals.ts","./src/setuptests.ts","./src/components/chat.tsx","./src/components/chatsamplequestions.tsx","./src/components/home.tsx","./src/components/layout.tsx","./src/components/navmenu.tsx","./vite.config.ts"],"version":"5.9.3"}

@@ -23,7 +23,7 @@ export function NavMenu() {
                             <NavLink tag={Link} className="text-dark" to={"/"}>Kursevi</NavLink>
                         </NavItem>
                         <NavItem>
-                            <NavLink tag={Link} className="text-dark" to={"/chat"}>Chat</NavLink>
+                            <NavLink tag={Link} className="text-dark" to={"/chat"}>AI Asistent</NavLink>
                         </NavItem>
                     </ul>
                 </Collapse>
