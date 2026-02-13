@@ -15,7 +15,6 @@ from ..ioutils import  read_str
 from .course import CourseContent, TocItem, load_course
 from ..ai import engine
 
-
 ENV_NAME_OPENAI_API_KEY = "CHATAI_OPENAI_API_KEY"
 ENV_NAME_AZURE_API_KEY = "CHATAI_AZURE_API_KEY"
 ENV_NAME_VLLM_API_KEY = "CHATAI_VLLM_API_KEY"
@@ -53,7 +52,12 @@ class ServerContent:
         self.course_dict = {}
         if conf.course_paths:
             for p in conf.course_paths:
-                course_fs = FileSet.from_base_url(urljoin(conf.content_url+'/', p))
+                parsed_url = urlparse(p)
+                if (parsed_url.scheme == "" or parsed_url.scheme == "file") and not os.path.isabs(parsed_url.path):
+                    course_fs = FileSet.from_base_url(conf.content_url).subdir(p)
+                else:    
+                    course_fs = FileSet.from_base_url(p)
+                logger.debug(f"Loading course from {p} with FileSet {course_fs}")
                 course_content = load_course(course_fs)
                 self.course_dict[course_content.course_key] = course_content
     
@@ -88,11 +92,21 @@ def get_server_content() -> ServerContent:
 
 def configure(*, course_urls: tuple[str] = None, config_file: str = None, verbose: bool = None,
               ai_ctx_url: str = None, azure_default_ai_endpoint: str = None) -> None:
+    # _set_log_level(verbose) # Early change log level, may be overridden later
+    logger.debug(f"Configuring server with course_urls: {course_urls}, config_file: {config_file}, verbose: {verbose}, ai_ctx_url: {ai_ctx_url}, azure_default_ai_endpoint: {azure_default_ai_endpoint}")
     conf: ConfigOptions = None
-    cfg_file = config_file or os.environ.get("PLCT_SERVER_CONFIG_FILE")
+    cfg_file = config_file or os.environ.get("PLCT_SERVER_CONFIG_FILE") 
+    default_course_urls = "plct-server-config.json"
+    if cfg_file is None and os.path.isfile(default_course_urls):
+        cfg_file = default_course_urls
     if cfg_file:
         logger.debug(f"Loading configuration file '{cfg_file}'")
         cfg_parsed_url = urlparse(cfg_file)
+        if cfg_parsed_url.scheme == "":
+            cfg_parsed_url = cfg_parsed_url._replace(
+                scheme="file",
+                path=os.path.abspath(cfg_parsed_url.path).replace(os.sep, '/'))
+        logger.debug(f"Parsed configuration file URL: {cfg_parsed_url}")
         cfg_text: str = None
         if cfg_parsed_url.scheme == "http" or cfg_parsed_url.scheme == "https":
             try:
@@ -105,28 +119,23 @@ def configure(*, course_urls: tuple[str] = None, config_file: str = None, verbos
                 # Handle HTTP status errors (e.g., 404, 500)
                 logger.error(f"Error loading the configuration file '{cfg_file}': "
                              f"HTTP status error: {e.response.status_code}")
-        else:
-            if cfg_parsed_url.scheme == "file":
+        elif cfg_parsed_url.scheme == "file":
                 fname = cfg_parsed_url.path
-            elif cfg_parsed_url.scheme == "":
-                fname = cfg_file
-            else:
-                logger.error(f"Error loading the configuration file '{cfg_file}': "
-                             f"unsupported scheme {cfg_parsed_url.scheme}.")
-            try:
-                cfg_text = read_str(fname)
-            except OSError as e:
-                logger.error(f"Error loading the configuration file '{cfg_file}': {e}")
+                try:
+                    cfg_text = read_str(fname)
+                except OSError as e:
+                    logger.error(f"Error loading the configuration file '{cfg_file}': {e}")
+        else:
+            logger.error(f"Error loading the configuration file '{cfg_file}': "
+                            f"unsupported scheme {cfg_parsed_url.scheme}.")
         if cfg_text is not None:
             try:
                 cfg_dict = json.loads(cfg_text)
                 conf = ConfigOptions(**cfg_dict)
-                if cfg_parsed_url.scheme == "":
-                    cfg_parsed_url = cfg_parsed_url._replace(
-                        scheme="file",
-                        path=os.path.abspath(cfg_parsed_url.path).replace(os.sep, '/'))
                 cfg_url = cfg_parsed_url.geturl()
-                conf.content_url = urljoin(cfg_url, conf.content_url)
+                logger.debug(f"Configuration loaded from '{cfg_url}'")
+                conf.content_url = urljoin(cfg_url, conf.content_url or ".")
+                logger.debug(f"Content URL set to '{conf.content_url}'")
                 conf.ai_ctx_url = urljoin(cfg_url, conf.ai_ctx_url)
             except (OSError, ValueError, TypeError)as e:
                 logger.error(f"Error loading the configuration file '{cfg_file}': {e}")
@@ -140,14 +149,9 @@ def configure(*, course_urls: tuple[str] = None, config_file: str = None, verbos
         conf.verbose = verbose
     if azure_default_ai_endpoint:
         conf.azure_default_ai_endpoint = azure_default_ai_endpoint
-    if conf.verbose:
-        logging.basicConfig(level=logging.DEBUG,
-                            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        logging.getLogger().setLevel(logging.DEBUG)
-    else:
-        logging.basicConfig(level=logging.INFO,
-                            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        logging.getLogger().setLevel(logging.INFO)
+    if conf.verbose is not None:
+        level = logging.DEBUG if conf.verbose else logging.INFO
+        logging.getLogger().setLevel(level)
     logger.debug(f"ConfigOptions: {conf}")
     global _server_content
     _server_content = ServerContent(conf)

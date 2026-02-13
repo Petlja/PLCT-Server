@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 import json
+import logging
 import os
 import posixpath
 import re
@@ -11,6 +12,7 @@ from fastapi.responses import FileResponse
 import httpx
 import yaml
 
+logger = logging.getLogger(__name__)
 class FileSet(ABC):
     @abstractmethod
     def read_str(self, path: str) -> str | None:
@@ -67,8 +69,6 @@ class FileSet(ABC):
             return HttpFileSet(base_url)
         elif parsed_url.scheme == "file":
             p = parsed_url.path
-            if ':' in p: # Windows path
-                p = p[1:]
             return LocalFileSet(p)
         elif parsed_url.scheme == "":
             return LocalFileSet(base_url)
@@ -85,6 +85,7 @@ class LocalFileSet(FileSet):
     base_dir: str
 
     def __init__(self, base_dir: str):
+        logger.debug(f"Creating LocalFileSet from base directory: {base_dir}")
         if base_dir.endswith('/'):
             self.base_dir = base_dir[:-1]
         else:

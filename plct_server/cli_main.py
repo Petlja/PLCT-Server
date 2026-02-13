@@ -1,3 +1,4 @@
+import logging
 import uvicorn
 import click
 import asyncio
@@ -22,8 +23,10 @@ def serve(folders: tuple[str], config : str, host: str, port: int, verbose:bool,
     """Start the HTTP server for PLCT course(s).
     
     FOLDERS: The folders of PLCT projects to serve. If not provided, the current directory is used."""
+    if(verbose):
+        logging.getLogger().setLevel(logging.DEBUG)
 
-    logger.info(f"folders: {folders}, host: {host}, port: {port}")
+    logger.debug(f"CLI optoins: folders: {folders}, host: {host}, port: {port}, verbose: {verbose}, ai_context: {ai_context}, azure_ai_endpoint: {azure_ai_endpoint}")
 
 
     server.configure(
