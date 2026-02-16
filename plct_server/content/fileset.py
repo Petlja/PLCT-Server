@@ -13,7 +13,20 @@ import httpx
 import yaml
 
 logger = logging.getLogger(__name__)
+
+
 class FileSet(ABC):
+    """Common abstraction for reading files from different sources (local filesystem, HTTP, etc.).
+
+    Provides a unified interface so that application code can access files regardless of their
+    origin without coupling to a specific storage mechanism. Core operations (read as string or bytes)
+    are abstract; convenience methods for JSON, YAML, and FastAPI responses are built on top.
+    Both synchronous and asynchronous variants are supported.
+
+    Concrete implementations:
+        - LocalFileSet: Reads from the local filesystem.
+        - HttpFileSet: Reads from a remote HTTP server, proxying requests and responses.
+    """
     @abstractmethod
     def read_str(self, path: str) -> str | None:
         pass

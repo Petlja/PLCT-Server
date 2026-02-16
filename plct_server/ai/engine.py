@@ -1,6 +1,7 @@
 import logging
 import chromadb
 import tiktoken
+from chromadb.config import Settings
 
 from tiktoken import Encoding
 from typing import Any, AsyncIterator, Coroutine, Union
@@ -55,7 +56,7 @@ class AiEngine:
         logger.debug(f"ai_ctx_url: {ai_ctx_url}")
         self.client_factory = client_factory
         self.ctx_data = ContextDataset(ai_ctx_url)
-        self.ch_cli = chromadb.Client()
+        self.ch_cli = chromadb.Client(Settings(anonymized_telemetry=False))
         self.encoding : Encoding = tiktoken.encoding_for_model(EMBEDDING_MODEL) 
         self._load_embeddings()
 

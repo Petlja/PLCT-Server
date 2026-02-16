@@ -11,7 +11,8 @@ if not logger.hasHandlers():
     handler.setFormatter(formatter)
     logging.basicConfig(level=logging.INFO, handlers=[handler])
     
-
+# When the PLCT Server package is used as an extension to the plct CLI, 
+# this function will be called to register the extension's commands
 def register_extension_command(cli_group):
     from .cli_main import serve, batch_review
     cli_group.add_command(serve)

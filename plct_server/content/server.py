@@ -90,10 +90,10 @@ def get_server_content() -> ServerContent:
         raise ValueError("Content configuration not initialized.")
     return _server_content
 
-def configure(*, course_urls: tuple[str] = None, config_file: str = None, verbose: bool = None,
-              ai_ctx_url: str = None, azure_default_ai_endpoint: str = None) -> None:
-    # _set_log_level(verbose) # Early change log level, may be overridden later
-    logger.debug(f"Configuring server with course_urls: {course_urls}, config_file: {config_file}, verbose: {verbose}, ai_ctx_url: {ai_ctx_url}, azure_default_ai_endpoint: {azure_default_ai_endpoint}")
+def load_config(*, course_urls: tuple[str] = None, config_file: str = None, verbose: bool = None,
+                ai_ctx_url: str = None, azure_default_ai_endpoint: str = None) -> ConfigOptions:
+    """Load and resolve configuration from file, CLI args, and environment variables."""
+    logger.debug(f"Loading config with course_urls: {course_urls}, config_file: {config_file}, verbose: {verbose}, ai_ctx_url: {ai_ctx_url}, azure_default_ai_endpoint: {azure_default_ai_endpoint}")
     conf: ConfigOptions = None
     cfg_file = config_file or os.environ.get("PLCT_SERVER_CONFIG_FILE") 
     default_course_urls = "plct-server-config.json"
@@ -153,19 +153,23 @@ def configure(*, course_urls: tuple[str] = None, config_file: str = None, verbos
         level = logging.DEBUG if conf.verbose else logging.INFO
         logging.getLogger().setLevel(level)
     logger.debug(f"ConfigOptions: {conf}")
+    return conf
+
+def init_server_content(conf: ConfigOptions) -> None:
+    """Initialize the ServerContent singleton from the given configuration."""
     global _server_content
     _server_content = ServerContent(conf)
 
+def init_ai_engine(conf: ConfigOptions) -> None:
+    """Initialize the AI engine: resolve API keys, create client factory, and start the engine."""
     azure_api_key = os.getenv(ENV_NAME_AZURE_API_KEY)
     openai_api_key = os.getenv(ENV_NAME_OPENAI_API_KEY)
     vllm_api_key = os.getenv(ENV_NAME_VLLM_API_KEY)
     
     if azure_api_key:
         default_provider = ModelProvider.AZURE
-        api_key = azure_api_key
     elif openai_api_key:
         default_provider = ModelProvider.OPENAI
-        api_key = openai_api_key
     else:
         raise ValueError("Neither Azure nor OpenAI API key found in environment variables")
     
@@ -179,5 +183,13 @@ def configure(*, course_urls: tuple[str] = None, config_file: str = None, verbos
 
     if conf.ai_ctx_url:
         engine.init(ai_ctx_url=conf.ai_ctx_url, client_factory=client_factory)
+
+def configure(*, course_urls: tuple[str] = None, config_file: str = None, verbose: bool = None,
+              ai_ctx_url: str = None, azure_default_ai_endpoint: str = None) -> None:
+    """Umbrella method that loads config, initializes server content, and starts the AI engine."""
+    conf = load_config(course_urls=course_urls, config_file=config_file, verbose=verbose,
+                       ai_ctx_url=ai_ctx_url, azure_default_ai_endpoint=azure_default_ai_endpoint)
+    init_server_content(conf)
+    init_ai_engine(conf)
 
 
