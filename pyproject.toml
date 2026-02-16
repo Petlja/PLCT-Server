@@ -1,6 +1,6 @@
 [project]
 name = "plct-server"
-version = "0.3.2"
+version = "0.3.3"
 description = ""
 authors = [{ name = "Nebojsa Vasiljevic", email = "nebojsa.vasiljevic@gmail.com" }]
 requires-python = ">=3.10,<4.0"
