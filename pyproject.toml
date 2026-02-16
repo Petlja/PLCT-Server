@@ -1,44 +1,51 @@
-[tool.poetry]
+[project]
 name = "plct-server"
 version = "0.3.2"
 description = ""
-authors = ["Nebojsa Vasiljevic <nebojsa.vasiljevic@gmail.com>"]
-license = "MIT"
+authors = [{ name = "Nebojsa Vasiljevic", email = "nebojsa.vasiljevic@gmail.com" }]
+requires-python = ">=3.10,<4.0"
 readme = "README.md"
+license = "MIT"
 classifiers = [
     "License :: OSI Approved :: MIT License",
     "Development Status :: 3 - Alpha",
     "Programming Language :: Python :: 3",
-    "Operating System :: OS Independent"]
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+dependencies = [
+    "pydantic>=2.0,<3.0",
+    "fastapi>=0.95,<1.0",
+    "uvicorn>=0.27,<1.0",
+    "rich>=13.0,<14.0",
+    "click>=8.0,<9.0",
+    "jinja2>=3.0,<4.0",
+    "plct-cli",
+    "openai>=2.16.0,<3",
+    "chromadb>=1.4,<1.5",
+    "httpx>=0.28.0,<0.29",
+    "aiofiles>=25.1.0,<26",
+    "pydantic-settings>=2.12.0,<3",
+    "zstandard>=0.25.0,<0.26",
+    "markdown-it-py>=3.0.0",
+    "tiktoken>=0.12.0,<0.13",
+]
 
-packages = [ { include = "plct_server" } ]
-
-
-[tool.poetry.dependencies]
-python = ">=3.10,<4.0"
-pydantic = ">=2.0,<3.0"
-fastapi = ">=0.95,<1.0"
-uvicorn = ">=0.27,<1.0"
-rich = ">=13.0,<14.0"
-click = ">=8.0,<9.0"
-jinja2 = ">=3.0,<4.0"
-plct-cli = "*"
-openai = "^2.16.0"
-chromadb = ">=1.4,<1.5"
-httpx = "^0.28.0"
-aiofiles = "^25.1.0"
-pydantic-settings = "^2.12.0"
-zstandard = "^0.25.0"
-markdown-it-py = ">=3.0.0"
-tiktoken = "^0.12.0"
-
-[tool.poetry.group.dev.dependencies]
-pypandoc = "^1.16"
-
-[build-system]
-requires = ["poetry-core", "setuptools"]
-build-backend = "poetry.core.masonry.api"
-
-[tool.poetry.scripts]
+[project.scripts]
 plct-serve = "plct_server.cli_main:cli"
 plct-batch-review = "plct_server.cli_main:batch_review_cli"
+
+[dependency-groups]
+dev = ["pypandoc>=1.16,<2"]
+
+[tool.uv.build-backend]
+module-name = ["plct_server"]
+module-root = ""
+
+[build-system]
+requires = ["uv_build>=0.10.0,<0.11.0"]
+build-backend = "uv_build"

@@ -4,13 +4,15 @@ import os
 import logging
 
 
+from pathlib import Path
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Sequence
 from urllib.parse import urljoin, urlparse
+from urllib.request import url2pathname
 from plct_server.ai.client import AiClientFactory
 from plct_server.ai.conf import ModelProvider
-from .fileset import FileSet
+from .fileset import FileSet, LocalFileSet
 from ..ioutils import  read_str
 from .course import CourseContent, TocItem, load_course
 from ..ai import engine
@@ -53,11 +55,16 @@ class ServerContent:
         if conf.course_paths:
             for p in conf.course_paths:
                 parsed_url = urlparse(p)
-                if (parsed_url.scheme == "" or parsed_url.scheme == "file") and not os.path.isabs(parsed_url.path):
-                    course_fs = FileSet.from_base_url(conf.content_url).subdir(p)
+                if parsed_url.scheme == "" or parsed_url.scheme == "file":
+                    urlPath = Path(url2pathname(parsed_url.path))
+                    if not urlPath.anchor:
+                        course_fs = FileSet.from_base_url(conf.content_url).subdir(urlPath.as_posix())
+                    else:
+                        course_fs = LocalFileSet(urlPath.as_posix())
+                    
                 else:    
                     course_fs = FileSet.from_base_url(p)
-                logger.debug(f"Loading course from {p} with FileSet {course_fs}")
+                logger.info(f"Loading course from {course_fs}")
                 course_content = load_course(course_fs)
                 self.course_dict[course_content.course_key] = course_content
     
@@ -103,9 +110,7 @@ def load_config(*, course_urls: tuple[str] = None, config_file: str = None, verb
         logger.debug(f"Loading configuration file '{cfg_file}'")
         cfg_parsed_url = urlparse(cfg_file)
         if cfg_parsed_url.scheme == "":
-            cfg_parsed_url = cfg_parsed_url._replace(
-                scheme="file",
-                path=os.path.abspath(cfg_parsed_url.path).replace(os.sep, '/'))
+            cfg_parsed_url = urlparse(Path(os.path.abspath(cfg_parsed_url.path)).as_uri())
         logger.debug(f"Parsed configuration file URL: {cfg_parsed_url}")
         cfg_text: str = None
         if cfg_parsed_url.scheme == "http" or cfg_parsed_url.scheme == "https":
@@ -120,7 +125,7 @@ def load_config(*, course_urls: tuple[str] = None, config_file: str = None, verb
                 logger.error(f"Error loading the configuration file '{cfg_file}': "
                              f"HTTP status error: {e.response.status_code}")
         elif cfg_parsed_url.scheme == "file":
-                fname = cfg_parsed_url.path
+                fname = url2pathname(cfg_parsed_url.path)
                 try:
                     cfg_text = read_str(fname)
                 except OSError as e:
@@ -182,6 +187,7 @@ def init_ai_engine(conf: ConfigOptions) -> None:
     )
 
     if conf.ai_ctx_url:
+        logger.info(f"Initializing AI engine with context URL: {conf.ai_ctx_url}")
         engine.init(ai_ctx_url=conf.ai_ctx_url, client_factory=client_factory)
 
 def configure(*, course_urls: tuple[str] = None, config_file: str = None, verbose: bool = None,

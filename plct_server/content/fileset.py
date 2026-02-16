@@ -5,6 +5,8 @@ import os
 import posixpath
 import re
 from urllib.parse import urljoin, urlparse
+from urllib.request import url2pathname
+from pathlib import Path
 
 import aiofiles
 from fastapi import Request, Response
@@ -81,7 +83,7 @@ class FileSet(ABC):
         if parsed_url.scheme in ("http", "https"):
             return HttpFileSet(base_url)
         elif parsed_url.scheme == "file":
-            p = parsed_url.path
+            p = url2pathname(parsed_url.path)
             return LocalFileSet(p)
         elif parsed_url.scheme == "":
             return LocalFileSet(base_url)
@@ -98,14 +100,10 @@ class LocalFileSet(FileSet):
     base_dir: str
 
     def __init__(self, base_dir: str):
-        logger.debug(f"Creating LocalFileSet from base directory: {base_dir}")
-        if base_dir.endswith('/'):
-            self.base_dir = base_dir[:-1]
-        else:
-            self.base_dir = base_dir
+        self.base_dir = Path(base_dir).resolve().as_posix()
 
     def local_path(self, path: str) -> str:
-        return f"{self.base_dir}/{clean_path(path)}"
+        return (Path(self.base_dir)/Path(path)).as_posix()
     
     def read_str(self, path: str) -> str | None:
         lpath = self.local_path(path)
@@ -143,7 +141,7 @@ class LocalFileSet(FileSet):
         return LocalFileSet(self.local_path(path))
     
     def __str__(self) -> str:
-        return f"LocalFileSet({self.base_dir})"
+        return Path(self.base_dir).as_uri()
     
 class HttpFileSet(FileSet):
 

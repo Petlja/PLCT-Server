@@ -1,6 +1,7 @@
 .venv/
 .venv2/
 poetry.lock
+uv.lock
 __pycache__/
 dist/
 build/
