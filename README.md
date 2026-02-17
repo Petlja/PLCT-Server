@@ -1,21 +1,75 @@
-# PLCT Server
+# PLCT Server with AI Assistant
 
-*This project is in the proof-of-concept stage.*
+PLCT (Petlja Learning Content Tools) Server is a simple server designed to:
+- serve learning content built using [PLCT](https://github.com/Petlja/PLCT-CLI) and [PetljaDoc](https://github.com/Petlja/PetljaDoc)
+- implement AI Assistant with context data from that learning content
 
-PLCT (Petlja Learning Content Tools) Server is a simple server designed to serve learning content built using PLCT. It may be launched locally using PLCT CLI or deployed as a standalone service. 
+PLCT content is basically static HTML5, but some features of PLCT components may be limited without server-side support. PLCT Server aims to provide the reference PLCT platform implementation suitable for development, demonstration, and simple production scenarios. PCLT Server is an OSS product designed to be easily adapted/integrated to meet specific needs.
 
-PLCT content is basically static HTML5, but some features of PLCT components may be limited without server-side support, like features based on AI or other server-side computation.
+## Prerequisites
 
-PLCT Server aims to provide the reference PLCT platform implementation suitable for development, demonstration, and simple production scenarios. PCLT Server is an OSS product designed to be easily adapted/integrated to meet specific needs.
+- Python 3.10+
+- The [uv tool](https://docs.astral.sh/uv/) (recommended) or pip
+- An OpenAI API key **or** an Azure OpenAI deployment
 
 ## Install
 
-*This doesn't work just now, but plct-serve will be published on PYPI soon*
+### Clone from GitHub
 
-In youre active python environment just use the pip command:
+Clone this repo:
 
+```bash
+git clone https://github.com/Petlja/PLCT-Server.git
 ```
-pip install plct-serve
+
+### In-place installation
+
+Navigate to the cloned repo:
+
+```bash
+cd PLCT-Server
+```
+
+Install with uv (recommended):
+
+```bash
+uv sync
+```
+
+Or install with pip (requires an activated virtual environment):
+
+```bash
+pip install -e .
+```
+
+### Installation inside another project
+
+Install PLCT Server into your project as a dependency:
+
+**Option 1 — pip:** From your project's activated virtual environment:
+
+```bash
+pip install git+https://github.com/Petlja/PLCT-Server.git@v0.3.3
+```
+
+**Option 2 — uv (recommended):** Add the dependency to your project's `pyproject.toml`:
+
+```toml
+[project]
+# ... other settings
+dependencies = [
+    "plct-server",
+    # ... other dependencies
+]
+
+[tool.uv.sources]
+plct-server = { git = "https://github.com/Petlja/PLCT-Server.git", tag = "v0.3.3" }
+```
+
+Then run:
+
+```bash
+uv sync
 ```
 
 Depending on how you have installed Python and configured active python environment, you may use alternative syntax to run the package installation.
@@ -43,6 +97,52 @@ PLCT Server can be [deployed as a FastAPI app](https://fastapi.tiangolo.com/depl
 
 Whichever method you use to run the PLCT Server, you can configure it using a configuration file. For more details, refer to the [PLCT Server configuration](doc/config.md).
 
+
+## CLI options and configuration
+
+Most configuration options can be set either on the command line or in a configuration file (YAML). A command line option overrides the same option in a configuration file. For full details, refer to the [PLCT Server configuration](doc/config.md).
+
+### `plct-serve` command
+
+```
+plct-serve [OPTIONS] [FOLDERS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `FOLDERS` | Positional args — folders of PLCT projects to serve. Defaults to current directory. |
+| `-c`, `--config` | Path to a YAML configuration file |
+| `-h`, `--host` | Host to bind to (default: `127.0.0.1`) |
+| `-p`, `--port` | Port to bind to (default: `9000`) |
+| `-v`, `--verbose` | Enable verbose (debug) logging |
+| `-a`, `--ai-context` | Folder or URL with the AI context dataset |
+| `-e`, `--azure-ai-endpoint` | Azure OpenAI endpoint. Use `modelname=endpoint` syntax for model-specific values |
+
+### Configuration file
+
+Specify the configuration file via `-c` option or the `PLCT_SERVER_CONFIG_FILE` environment variable. Available keys:
+
+```yaml
+verbose: false
+content_url: ../courses            # base URL for course_paths
+course_paths:                       # list of PLCT project paths
+  - intro_to_prog
+  - databases
+ai_ctx_url: ai-context              # AI context dataset path or URL
+api_key: <your-api-key>             # API key for RAG REST API access
+azure_default_ai_endpoint: https://my-endpoint.openai.azure.com/
+vllm_url: http://localhost:8000/v1  # vLLM server URL
+```
+
+### Environment variables
+
+| Variable | Description |
+|----------|-------------|
+| `PLCT_SERVER_CONFIG_FILE` | Path to the YAML configuration file |
+| `CHATAI_OPENAI_API_KEY` | OpenAI API key |
+| `CHATAI_AZURE_API_KEY` | Azure OpenAI Service API key |
+| `CHATAI_VLLM_API_KEY` | vLLM server API key |
+| `PLCT_API_KEY` | API key for RAG REST API access |
 
 ## Setting up development environment
 

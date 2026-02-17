@@ -39,7 +39,7 @@ uvicorn plct_server.ui_main:app --host 127.0.0.1 --port 9000
 
 You can configure verbose messages, which will effectively set the debug log level.
 
-### cmmand line
+### command line
 
 Use `-v` or `--verbose`. Example:
 ```
@@ -106,25 +106,27 @@ plct-serve -h 127.0.0.1 -p 9000
 Host and port options cannot be configured in a configuration file. These options are specific to the `plct-serve` command that embeds an HTTP server.
 
 ## AI context dataset
-AI Assistant implementation uses a preprocessed context dataset that you can create using a Python script with the `ContextDatasetBuilder` class from the [`plct_server.ai.context_dataset`](https://github.com/Petlja/PLCT-Server/blob/main/plct_server/ai/context_dataset.py) module.
 
-Context dataset is a file-set that can be accessed either locally or via HTTP(S).
+The AI Assistant uses a preprocessed context dataset that you can create using [PLCT AI Context Builder](https://github.com/Petlja/PLCT-AI-Ctx/). The context dataset is a file-set that can be accessed either locally or via HTTP(S).
+
+For customized preprocessing, you can use the `ContextDatasetBuilder` class from the [`plct_server.ai.context_dataset`](https://github.com/Petlja/PLCT-Server/blob/main/plct_server/ai/context_dataset.py) module directly.
+
 
 ### command line
 
 Use `-a` or `--ai-context` with a folder URL. Example:
 ```
-plct-serve --ai-context ../ai_assistant_scripts/ai-context
+plct-serve --ai-context <ai-contex path>
 ```
 
-Relative patsh are considered relative to the current folder. Supported URL schemes are `http`, `https` and `file`.
+Relative paths are considered relative to the current folder. Supported URL schemes are `http`, `https` and `file`.
 
 ### configuration file
 
 Use the `ai_ctx_url` key. Example:
 
 ```yaml
-ai_ctx_url: ../ai_assistant_scripts/ai-context
+ai_ctx_url: <ai-contex path>
 ```
 
 Relative paths are considered relative to the folder of the configuration file. Supported URL schemes are `http`, `https` and `file`.
@@ -152,7 +154,7 @@ Use the `PLCT_API_KEY` environment variable to set your api key.
 ### environment variables
 
 Use the `CHATAI_OPENAI_API_KEY` environment variable to set the OpenAI API key or use
-`CHATAI_AZURE_API_KEY` to set Azure OpenAI Service key and if you do make sure you set the `azure_default_ai_endpoint`.
+`CHATAI_AZURE_API_KEY` to set the Azure OpenAI Service key (and make sure you also set the `azure_default_ai_endpoint`).
 
 ## Azure OpenAI Service
 
@@ -174,41 +176,76 @@ Use the `azure_default_ai_endpoint` string for default Azure OpenAI Service. Exa
 azure_default_ai_endpoint: https://my_endpoint1.openai.azure.com/
 ```
 
-Once the Azure OpenAI Service endpoint is provided, ensure that you set up your Azure environment with the correct models. This includes specifying the model names, deployment names, and API versions that you will use. You can modify or reference the `MODEL_CONFIGS`, located in the PLCT Server configuration module [`plct_server.ai.conf`](https://github.com/Petlja/PLCT-Server/blob/main/plct_server/ai/conf.py)
+Once the Azure OpenAI Service endpoint is provided, ensure that you set up your Azure environment with the correct models. This includes specifying the model names, deployment names, and API versions that you will use. You can modify or reference `MODEL_CONFIGS_LIST`, located in the PLCT Server configuration module [`plct_server.ai.model_conf`](https://github.com/Petlja/PLCT-Server/blob/main/plct_server/ai/model_conf.py)
 
 
 ```python
-MODEL_CONFIGS = {
-    "gpt-4o-mini": ModelConfig(
+MODEL_CONFIGS_LIST = [
+    ModelConfig(
         name="gpt-4o-mini",
+        provider=None,  # use default provider
         azure_deployment_name="gpt-4o-mini",
-        api_version="2023-03-15-preview",
+        azure_api_version="2023-03-15-preview",
         type="chat",
         context_size=128_000
     ),
-    "gpt-4o": ModelConfig(
+    ModelConfig(
         name="gpt-4o",
-        azure_deployment_name="gpt-4o"
-        api_version="2024-02-15-preview",
+        provider=None,  # use default provider
+        azure_deployment_name="gpt-4o",
+        azure_api_version="2024-02-15-preview",
         type="chat",
         context_size=128_000
     ),
-    "text-embedding-3-large": ModelConfig(
+    ModelConfig(
         name="text-embedding-3-large",
+        provider=None,  # use default provider
         azure_deployment_name="text-embedding-3-large",
-        api_version="2023-05-15",
+        azure_api_version="2023-05-15",
         type="embedding",
         context_size=8_191
-    )
-}
+    ),
+]
 ```
 
-For example, if you already have an Azure OpenAI deployment for the gpt-4o-mini model named `my-gpt-4o-mini`, ensure that the azure_deployment_name and api_version fields are correctly configured:
+For example, if you already have an Azure OpenAI deployment for the gpt-4o-mini model named `my-gpt-4o-mini`, ensure that the `azure_deployment_name` and `azure_api_version` fields are correctly configured:
 
 ```python
   azure_deployment_name="my-gpt-4o-mini"
-  api_version="2023-05-15"
+  azure_api_version="2023-05-15"
 ```
+
+## vLLM Server
+
+PLCT Server can use a [vLLM](https://docs.vllm.ai/) server as a model provider. When configured, the server will query the vLLM endpoint for available models and auto-add any that are not already in `MODEL_CONFIGS_LIST`.
+
+### configuration file
+
+Use the `vllm_url` key to point to the vLLM OpenAI-compatible API endpoint. Example:
+
+```yaml
+vllm_url: http://localhost:8000/v1
+```
+
+### environment variables
+
+Use the `CHATAI_VLLM_API_KEY` environment variable to set the vLLM server API key (defaults to `EMPTY` if not set).
+
+You can pre-configure vLLM models in `MODEL_CONFIGS_LIST` to set custom options like `extra_body` or `context_size`:
+
+```python
+ModelConfig(
+    name="meta-llama/Llama-3.1-70B-Instruct",
+    provider=ModelProvider.VLLM,
+    type="chat",
+    context_size=128_000,
+    extra_body={
+        "stop_token_ids": [128001, 128008, 128009]
+    }
+)
+```
+
+Models served by vLLM that are not in `MODEL_CONFIGS_LIST` will be auto-added with their reported `max_model_len` as `context_size`.
 
 
 
