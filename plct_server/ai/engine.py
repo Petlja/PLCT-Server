@@ -10,7 +10,7 @@ from openai.types.chat import ChatCompletion
 
 from plct_server.ai.client import AiClientFactory
 
-from .conf import MODEL_CONFIGS, ModelConfig
+from .model_conf import ModelConfig, ModelProvider, MODEL_CONFIGS_LIST
 from .context_dataset import ContextDataset
 from .query_context import QueryContext, QueryError
 from .structured_outputs.query_classification import TOOLS_CHOICE_DEF, TOOLS_DEF, Classification, QueryLanguage, StructuredOutputResponse, get_answer_language, parse_query_classification
@@ -52,13 +52,58 @@ PETLJA_DOCS_COURSE_KEY = "petlja-docs"
 
 
 class AiEngine:
+
+
+    _model_config_dict: dict[str, ModelConfig] = dict()
+    
     def __init__(self, *, ai_ctx_url: str, client_factory: AiClientFactory):
         logger.debug(f"ai_ctx_url: {ai_ctx_url}")
         self.client_factory = client_factory
         self.ctx_data = ContextDataset(ai_ctx_url)
         self.ch_cli = chromadb.Client(Settings(anonymized_telemetry=False))
         self.encoding : Encoding = tiktoken.encoding_for_model(EMBEDDING_MODEL) 
+        self._load_model_configs()
         self._load_embeddings()
+
+    def add_model_config(self, model_config: ModelConfig) -> None:
+        if model_config.display_name is None:
+            model_config.display_name = model_config.name.split("/")[-1]
+        self._model_config_dict[model_config.name] = model_config
+        model_config.order = len(self._model_config_dict)
+
+    def get_chat_models(self) -> list[ModelConfig]:
+        chat_models = [m for m in self._model_config_dict.values() if m.type == "chat"]
+        chat_models.sort(key=lambda m: m.order)
+        return chat_models
+
+    def _load_model_configs(self):
+        server_vllm_models = self.client_factory.list_vllm_models()
+        configured_vllm_models = set()
+        for model_config in MODEL_CONFIGS_LIST:
+            if model_config.provider == ModelProvider.VLLM:
+                if model_config.name in server_vllm_models:
+                    self.add_model_config(model_config)
+                    configured_vllm_models.add(model_config.name)
+                    logger.info(f"Added configured vLLM model '{model_config.name}'")
+            else:
+                self.add_model_config(model_config)
+                logger.info(f"Added configured model '{model_config.name}' for default provider")
+        for model_name in set(server_vllm_models) - configured_vllm_models:
+            context_size = server_vllm_models[model_name] or 128_000
+            self.add_model_config(ModelConfig(
+                name=model_name,
+                provider=ModelProvider.VLLM,
+                type="chat",
+                context_size=context_size
+            ))
+            logger.info(f"Auto-added vLLM model '{model_name}' (context_size={context_size})")
+
+    
+    def get_model_config(self, model_name: str) -> ModelConfig:
+        model_config = self._model_config_dict.get(model_name)
+        if not model_config:
+            raise ValueError(f"Model '{model_name}' not found in configuration")
+        return model_config
 
 
     def _load_embeddings(self):
@@ -87,16 +132,10 @@ class AiEngine:
             )
 
         logger.debug(f"Embeddings loaded and indexed {EMBEDDING_MODEL}-{EMBEDDING_SIZE}")
-
-    def _get_model_config(self, model_name: str) -> ModelConfig:
-        conf = MODEL_CONFIGS.get(model_name)
-        if not conf:
-            raise ValueError(f"Model configuration for {model_name} not found")
-        return conf
     
     def _get_async_openai_client(self, requested_model: str | None) -> Union[AsyncOpenAI, AsyncAzureOpenAI]:
         logger.debug(f"Creating AI client")
-        model_config = self._get_model_config(requested_model)
+        model_config = self.get_model_config(requested_model)
         return self.client_factory.get_client(model_config)
 
     async def _handle_query_submission(self, message: list[dict[str, str]], max_tokens: int, stream : bool,
@@ -105,7 +144,7 @@ class AiEngine:
         client = self._get_async_openai_client(
             requested_model = model
         )
-        config = self._get_model_config(model)
+        config = self.get_model_config(model)
 
         def encode_message_content(message: list[dict[str, str]]) -> int:
             total_length = 0
@@ -144,7 +183,7 @@ class AiEngine:
         client = self._get_async_openai_client(
             requested_model= EMBEDDING_MODEL
         )
-        config = self._get_model_config(EMBEDDING_MODEL)
+        config = self.get_model_config(EMBEDDING_MODEL)
         token_limit = config.context_size
 
         if len(self.encoding.encode(input)) > token_limit:
@@ -219,7 +258,7 @@ class AiEngine:
         client = self._get_async_openai_client(
             requested_model = model
         )
-        config = self._get_model_config(model)
+        config = self.get_model_config(model)
 
         course_summary, lesson_summary = self.ctx_data.get_summary_texts(
             course_key, activity_key)

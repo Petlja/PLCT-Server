@@ -27,6 +27,10 @@ class ChatInput(BaseModel):
     model : str = ""
     contextAttributes: dict[str,str] = {}
 
+class ChatModel(BaseModel):
+    name: str
+    display_name: str
+
 async def stream_response(answer, condensed_history, followup_questions) -> AsyncGenerator[bytes, None]:
     metadata = {
         "condensed_history": condensed_history,
@@ -40,6 +44,13 @@ async def stream_response(answer, condensed_history, followup_questions) -> Asyn
 
 logger = logging.getLogger(__name__)
 
+
+@router.get("/api/models")
+async def get_models() -> List[ChatModel]:
+    ai_engine = get_ai_engine()
+    chat_models = ai_engine.get_chat_models()
+    result = [ChatModel(name=model.name, display_name=model.display_name) for model in chat_models]
+    return result
 
 @router.get("/api/chat")
 async def get_chat() -> Response:

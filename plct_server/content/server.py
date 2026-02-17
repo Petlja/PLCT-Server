@@ -11,7 +11,7 @@ from typing import Sequence
 from urllib.parse import urljoin, urlparse
 from urllib.request import url2pathname
 from plct_server.ai.client import AiClientFactory
-from plct_server.ai.conf import ModelProvider
+from plct_server.ai.model_conf import ModelProvider
 from .fileset import FileSet, LocalFileSet
 from ..ioutils import  read_str
 from .course import CourseContent, TocItem, load_course
@@ -43,6 +43,7 @@ class ConfigOptions(BaseSettings):
     verbose: bool | None = None
     api_key: str | None = None
     azure_default_ai_endpoint: str | None = None
+    vllm_url: str | None = None
 
 class ServerContent:
 
@@ -183,6 +184,7 @@ def init_ai_engine(conf: ConfigOptions) -> None:
         openai_api_key=openai_api_key,
         azure_api_key=azure_api_key,
         vllm_api_key=vllm_api_key,
+        vllm_url=conf.vllm_url,
         azure_default_ai_endpoint=conf.azure_default_ai_endpoint
     )
 

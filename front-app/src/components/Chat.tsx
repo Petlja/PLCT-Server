@@ -42,7 +42,8 @@ export function Chat() {
     const [lessonList, setLessonList] = useState<{key: string; title: string}[]>([{key: '-', title: '---'}]);
     const [activitiyKey, setActivityKey] = useState<string>("-");
     const [activityList, setActivityList] = useState<{key: string; title: string}[]>([{key: '-', title: '---'}]);
-    const [model, setModel] = useState<string>("gpt-4o-mini");
+    const [model, setModel] = useState<string>("");
+    const [modelList, setModelList] = useState<{name: string; display_name: string}[]>([]);
     const [questions, setQuestions] = useState<string[]>(defaultQuestions);
 
     async function handleCourseChange() {
@@ -210,6 +211,19 @@ export function Chat() {
             setCourseList(courses);
             if (courses.length > 0)
                 setCourseKey(courses[0].course_key)
+
+            const r_models = await fetch(
+                "../api/models",
+                {
+                    method: 'GET',
+                    headers: {
+                        "Accept": "application/json"
+                    }
+                });
+            const models = await r_models.json()
+            setModelList(models);
+            if (models.length > 0)
+                setModel(models[0].name)
             
             const statusResponse = await fetch("../api/chat", {
                 method: 'GET'
@@ -242,16 +256,8 @@ export function Chat() {
                 </select>
                 <br />
                 <select className="form-select" value={model} onChange={(e) => setModel(e.target.value)}>
-                    <option value="gpt-4o">gpt-4o</option>
-                    <option value="gpt-4o-mini">gpt-4o-mini</option>
-                    <option value="meta-llama/Meta-Llama-3.1-70B">llama-3.1-70b</option>
-                    <option value="nvidia/Llama-3.3-70B-Instruct-FP8">llama-3.3-70B-FP8</option>
-                    <option value="Qwen/Qwen3-32B">qwen3-32b</option>
-                    <option value="Qwen/Qwen3-14B">qwen3-14b</option>
-                    <option value="Qwen/Qwen3-8B">qwen3-8b</option>
-
-                    
-                 </select>
+                    {modelList.map((m, i) => <option key={i} value={m.name}>{m.display_name}</option>)}
+                </select>
                 <br />
                 <MainContainer responsive>
                     <ChatContainer>

@@ -1,10 +1,10 @@
 .venv/
 .venv2/
-poetry.lock
 uv.lock
 __pycache__/
 dist/
 build/
+!plct_server/front-app/build/
 plct-server-config.yaml
 /plct_server/eval/results
 /.vscode

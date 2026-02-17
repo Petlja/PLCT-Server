@@ -8,39 +8,42 @@ class ModelProvider(Enum):
 
 class ModelConfig(BaseModel):
     name: str
+    display_name: str | None = None
     azure_deployment_name: str = ""
     azure_api_version: str = ""
     context_size: int
     type : str
     extra_body : dict = {}
-    vllm_url : str = None
-    provider : ModelProvider = None  # use default provider if None
+    provider : ModelProvider | None = None  # use default provider if None
+    order: int = 0  # for sorting models in the UI
 
-MODEL_CONFIGS = {
-    "gpt-4o-mini": ModelConfig(
+MODEL_CONFIGS_LIST = [
+    ModelConfig(
         name="gpt-4o-mini",
+        provider = None,  # use default provider
         azure_deployment_name="gpt-4o-mini",
         azure_api_version="2023-03-15-preview",
         type = "chat",
         context_size=128_000
     ),
-    "gpt-4o": ModelConfig(
+    ModelConfig(
         name="gpt-4o",
+        provider = None,  # use default provider
         azure_deployment_name="gpt-4o",
         azure_api_version="2024-02-15-preview",
         type = "chat",
         context_size=128_000
     ),
-    "text-embedding-3-large": ModelConfig(
+    ModelConfig(
         name="text-embedding-3-large",
+        provider = None,  # use default provider
         azure_deployment_name="text-embedding-3-large",
         azure_api_version="2023-05-15",
         type = "embedding",
         context_size=8_191
     ),
-    "meta-llama/Meta-Llama-3.1-70B" : ModelConfig(
+    ModelConfig(
         name="meta-llama/Llama-3.1-70B-Instruct",
-        vllm_url = "http://localhost:8000/v1",
         provider = ModelProvider.VLLM,
         type = "chat",
         context_size=128_000,
@@ -48,35 +51,29 @@ MODEL_CONFIGS = {
                 "stop_token_ids": [128001,128008,128009]
             }
     ),
-
-    "nvidia/Llama-3.3-70B-Instruct-FP8" : ModelConfig(
+    ModelConfig(
         name="nvidia/Llama-3.3-70B-Instruct-FP8",
-        vllm_url = "http://localhost:8000/v1",
         provider = ModelProvider.VLLM,
         type = "chat",
         context_size=98_304
     ),
-
-    "Qwen/Qwen3-32B" : ModelConfig(
+    ModelConfig(
         name="Qwen/Qwen3-32B",
-        vllm_url = "http://localhost:8000/v1",
         provider= ModelProvider.VLLM,
         type = "chat",
         context_size=32_768
     ),
-    "Qwen/Qwen3-14B" : ModelConfig(
+    ModelConfig(
         name="Qwen/Qwen3-14B",
-        vllm_url = "http://localhost:8000/v1",
         provider= ModelProvider.VLLM,
         type = "chat",
         context_size=32_768
     ),
-    "Qwen/Qwen3-8B" : ModelConfig(
+    ModelConfig(
         name="Qwen/Qwen3-8B",
-        vllm_url = "http://localhost:8000/v1",
         provider = ModelProvider.VLLM,
         type = "chat",
         context_size=32_768
     )
     
-}
+]

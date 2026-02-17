@@ -46,11 +46,11 @@ Whichever method you use to run the PLCT Server, you can configure it using a co
 
 ## Setting up development environment
 
-You need to have installed Git, Pyton, Poetry and Node.js/npm. If you don't have experience with all those tools, take a look at how to use them.
+You need to have installed Git, Python, uv and Node.js/npm. If you don't have experience with all those tools, take a look at how to use them.
 
 Clone the repo into your local project folder.
 
-Create a Python virtual environment for the project and make it active. You may use Poetry to create the virtual environment, but you also can keep using whatever you want since Poetry works well in any active Python virtual environment.
+Create a Python virtual environment for the project and make it active. You may use uv to create the virtual environment (`uv venv`), but you also can keep using whatever you want since uv works well in any active Python virtual environment.
 
 Take care to have the Python virtual environment activated before continue. If you use terminal/console integrated in your IDE, set it up to have an appropriate virtual environment activated.
 
@@ -61,14 +61,14 @@ pushd front-app
 npm install
 npm run build
 popd
-poetry install
+uv sync
 ```
 
-It's also okay if you have done `poetry install` previously.
+It's also okay if you have done `uv sync` previously.
 
 ## Run server in the development environment
 
-You can run the PLCT Server using `plct-serve` command as it is explained in the Usage section above, since the `poetry install` command makes dev install of the package you are developing (like `pip -e .`).
+You can run the PLCT Server using `plct-serve` command as it is explained in the Usage section above, since the `uv sync` command makes dev install of the package you are developing (like `pip -e .`).
 
 When using the `plct-serve` command during development, you'll need to restart the server for any changes to take effect. Additionally, when you make changes to the React front-end, you need to execute `npm install`.
 
