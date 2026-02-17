@@ -4,7 +4,7 @@ Most configuration options can be set either on the command line or in a configu
 
 A command line option overrides the same option configured in a configuration file.
 
-The configuration file is a JSON dictionary where each key represents an option.
+The configuration file is a YAML file where each key represents an option.
 
 ## Specifying the configuration file
 
@@ -14,7 +14,7 @@ There is no default configuration file. If you need a configuration file, you ca
 
 Use `-c` or `--config` with a file name in the argument. Example:
 ```
-plct-serve -c dev-server.json
+plct-serve -c plct-server-config.yaml
 ```
 
 ### environment variable
@@ -25,12 +25,12 @@ You don’t need to use the `plct-server` command line; instead, you can run the
 
 *Windows Command Prompt*
 ```
-SET PLCT_SERVER_CONFIG_FILE=dev-server.json
+SET PLCT_SERVER_CONFIG_FILE=plct-server-config.yaml
 uvicorn plct_server.ui_main:app --host 127.0.0.1 --port 9000
 ```
 *Bash shell*
 ```
-export PLCT_SERVER_CONFIG_FILE=dev-server.json
+export PLCT_SERVER_CONFIG_FILE=plct-server-config.yaml
 uvicorn plct_server.ui_main:app --host 127.0.0.1 --port 9000
 ```
 
@@ -50,10 +50,8 @@ plct-serve -v
 
 Use `verbose` key with `true` value. Example:
 
-```json
-{
-  "verbose" : true
-}
+```yaml
+verbose: true
 ```
 
 ## Paths to PLCT courses to be served
@@ -69,10 +67,10 @@ Relative paths are considered relative to the current folder.
 ### configuration file<a id='course_paths'></a>
 
 Use the `course_paths` key. Example:
-```json
-{
-  "course_paths": ["../courses/intro_to_prog", "../courses/databases"]
-}
+```yaml
+course_paths:
+  - ../courses/intro_to_prog
+  - ../courses/databases
 ```
 Relative paths are interpreted as follows:
 - If [`content_url`](#content_url) is **not configured**, they are considered relative to the folder of the configuration file.
@@ -86,11 +84,11 @@ The command line option is not implemented yet.
 
 Use the `content_url` key. It is intended for use in conjunction with [`course_paths`](#course_paths). Example:
 
-```json
-{
-  "content_url" : "../courses",
-  "course_paths": ["intro_to_prog", "databases"]
-}
+```yaml
+content_url: ../courses
+course_paths:
+  - intro_to_prog
+  - databases
 ```
 ## Host and port
 
@@ -125,10 +123,8 @@ Relative patsh are considered relative to the current folder. Supported URL sche
 
 Use the `ai_ctx_url` key. Example:
 
-```json
-{
-  "ai_ctx_url": "../ai_assistant_scripts/ai-context"
-}
+```yaml
+ai_ctx_url: ../ai_assistant_scripts/ai-context
 ```
 
 Relative paths are considered relative to the folder of the configuration file. Supported URL schemes are `http`, `https` and `file`.
@@ -141,10 +137,8 @@ PLCT server implements the Retrieval Augmented Generation (RAG) REST API. To ena
 
 Use the `api_key` key. Example:
 
-```json
-{
-  "api_key": "695613bb32c64842bd64aff8f8edc51951a90a183ff3b690697f0247657deb48"
-}
+```yaml
+api_key: 695613bb32c64842bd64aff8f8edc51951a90a183ff3b690697f0247657deb48
 ```
 
 The API key in the above example is randomly generated SHA-256 hash.
@@ -176,10 +170,8 @@ plct-serve -e https://my_endpoint1.openai.azure.com/
 
 Use the `azure_default_ai_endpoint` string for default Azure OpenAI Service. Example:
 
-```json
-{
-  "azure_default_ai_endpoint": "https://my_endpoint1.openai.azure.com/",
-}
+```yaml
+azure_default_ai_endpoint: https://my_endpoint1.openai.azure.com/
 ```
 
 Once the Azure OpenAI Service endpoint is provided, ensure that you set up your Azure environment with the correct models. This includes specifying the model names, deployment names, and API versions that you will use. You can modify or reference the `MODEL_CONFIGS`, located in the PLCT Server configuration module [`plct_server.ai.conf`](https://github.com/Petlja/PLCT-Server/blob/main/plct_server/ai/conf.py)

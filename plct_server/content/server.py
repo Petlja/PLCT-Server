@@ -1,7 +1,7 @@
-import json
 import httpx
 import os
 import logging
+import yaml
 
 
 from pathlib import Path
@@ -103,7 +103,7 @@ def load_config(*, course_urls: tuple[str] = None, config_file: str = None, verb
     logger.debug(f"Loading config with course_urls: {course_urls}, config_file: {config_file}, verbose: {verbose}, ai_ctx_url: {ai_ctx_url}, azure_default_ai_endpoint: {azure_default_ai_endpoint}")
     conf: ConfigOptions = None
     cfg_file = config_file or os.environ.get("PLCT_SERVER_CONFIG_FILE") 
-    default_course_urls = "plct-server-config.json"
+    default_course_urls = "plct-server-config.yaml"
     if cfg_file is None and os.path.isfile(default_course_urls):
         cfg_file = default_course_urls
     if cfg_file:
@@ -135,7 +135,7 @@ def load_config(*, course_urls: tuple[str] = None, config_file: str = None, verb
                             f"unsupported scheme {cfg_parsed_url.scheme}.")
         if cfg_text is not None:
             try:
-                cfg_dict = json.loads(cfg_text)
+                cfg_dict = yaml.safe_load(cfg_text)
                 conf = ConfigOptions(**cfg_dict)
                 cfg_url = cfg_parsed_url.geturl()
                 logger.debug(f"Configuration loaded from '{cfg_url}'")

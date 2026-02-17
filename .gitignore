@@ -5,6 +5,6 @@ uv.lock
 __pycache__/
 dist/
 build/
-dev-server.json
+plct-server-config.yaml
 /plct_server/eval/results
 /.vscode

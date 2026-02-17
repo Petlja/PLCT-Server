@@ -74,7 +74,7 @@ When using the `plct-serve` command during development, you'll need to restart t
 
 You can ran the dev-mode server on `http://localhost:9000` using the `dev-server.cmd` or `dev-server.sh` script (depending on your OS). When run this way, the server will do live-reload on any change in the `plct_server` package.
 
-The *dev-server* script does't support arguments, but you may edit the `dev-server.json` file instead. When you run the *dev-server* script first time, the `dev-server.json` file will be created as a copy of `dev-server.sample.json`. For more details on config options, refer to the [PLCT Server configuration](doc/config.md).
+The *dev-server* script does't support arguments, but you may edit the `plct-server-config.yaml` file instead. When you run the *dev-server* script first time, the `plct-server-config.yaml` file will be created as a copy of `plct-server-config-sample.yaml`. For more details on config options, refer to the [PLCT Server configuration](doc/config.md).
 
 If you also require live reload for the React front-end, you can run the front-end server on `http://localhost:3000` by using the `npm start` command in the `front-app` folder.
 
