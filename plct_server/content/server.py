@@ -189,6 +189,8 @@ def init_ai_engine(conf: ConfigOptions) -> None:
     if conf.ai_ctx_url:
         logger.info(f"Initializing AI engine with context URL: {conf.ai_ctx_url}")
         engine.init(ai_ctx_url=conf.ai_ctx_url, client_factory=client_factory)
+        course_keys = engine.get_ai_engine().ctx_data.course_dict.keys()
+        logger.info(f"Courses in AI Context: {', '.join(course_keys)}")
 
 def configure(*, course_urls: tuple[str] = None, config_file: str = None, verbose: bool = None,
               ai_ctx_url: str = None, azure_default_ai_endpoint: str = None) -> None:
