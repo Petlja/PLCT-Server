@@ -6,6 +6,8 @@ PLCT (Petlja Learning Content Tools) Server is a simple server designed to:
 
 PLCT content is basically static HTML5, but some features of PLCT components may be limited without server-side support. PLCT Server aims to provide the reference PLCT platform implementation suitable for development, demonstration, and simple production scenarios. PCLT Server is an OSS product designed to be easily adapted/integrated to meet specific needs.
 
+> **New here?** See the [Getting Started](doc/getting_started.md) guide for a complete, step-by-step walkthrough — from creating a deployment project to serving courses with an AI Assistant.
+
 ## Prerequisites
 
 - Python 3.10+
@@ -49,7 +51,7 @@ Install PLCT Server into your project as a dependency:
 **Option 1 — pip:** From your project's activated virtual environment:
 
 ```bash
-pip install git+https://github.com/Petlja/PLCT-Server.git@v0.3.3
+pip install git+https://github.com/Petlja/PLCT-Server.git@v0.3.4
 ```
 
 **Option 2 — uv (recommended):** Add the dependency to your project's `pyproject.toml`:
@@ -63,7 +65,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-plct-server = { git = "https://github.com/Petlja/PLCT-Server.git", tag = "v0.3.3" }
+plct-server = { git = "https://github.com/Petlja/PLCT-Server.git", tag = "v0.3.4" }
 ```
 
 Then run:
