@@ -1,4 +1,4 @@
-# Getting Started — PLCT Server with AI Assistant
+# Getting Started: PLCT Server with AI Assistant
 
 This guide walks you through the full deployment of PLCT Server with an AI Assistant, from setting up a project directory to serving courses with AI-powered context. By the end you will have a working deployment project that references PLCT-Server and PLCT-AI-Ctx as dependencies and serves PLCT courses with an integrated AI Assistant.
 
@@ -85,9 +85,9 @@ Dependencies are installed automatically on the first `uv run` command, but it i
 uv sync
 ```
 
-### Create `.gitignore`
+### Create `.gitignore` (optional)
 
-Courses, generated context data, and virtual environments should not be committed. Create a `.gitignore`:
+If you are using or plan to use Git for version control, create a `.gitignore` to keep generated artifacts out of the repository:
 
 ```gitignore
 __pycache__/

@@ -187,6 +187,8 @@ class ContextDataset:
         embedding_type = f"{embedding_model}-{embedding_size}"
         emb_path = f"emb-{embedding_type}.json.zst"
         b = self.fs.read_bytes(emb_path)
+        if b is None:
+            raise ValueError(f"Embedding file {emb_path} not found")
         with zstd.open(io.BytesIO(b), 'rt', encoding="utf-8") as f:
            emb_str = f.read()
         b = None
