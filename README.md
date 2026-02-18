@@ -51,7 +51,7 @@ Install PLCT Server into your project as a dependency:
 **Option 1 — pip:** From your project's activated virtual environment:
 
 ```bash
-pip install git+https://github.com/Petlja/PLCT-Server.git@v0.3.4
+pip install git+https://github.com/Petlja/PLCT-Server.git@v0.3.5
 ```
 
 **Option 2 — uv (recommended):** Add the dependency to your project's `pyproject.toml`:
@@ -65,7 +65,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-plct-server = { git = "https://github.com/Petlja/PLCT-Server.git", tag = "v0.3.4" }
+plct-server = { git = "https://github.com/Petlja/PLCT-Server.git", tag = "v0.3.5" }
 ```
 
 Then run:
