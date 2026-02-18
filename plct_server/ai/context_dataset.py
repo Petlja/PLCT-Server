@@ -76,17 +76,15 @@ class ContextDatasetBuilder:
         self.active_chunks.add(chunk_hash)
         
         logger.info(f"Hash: {chunk_hash}, TextLengt: {len(chunk_text)}")
-        missing_sizes = []
-        if os.path.exists(chunk_text_path):
-            missing_sizes = [
-                size for size in embeding_sizes
-                if not os.path.exists(os.path.join(chunk_dir, f"{chunk_hash}-{embeding_model}-{size}.json"))
-            ]
-            if not missing_sizes:
-                chunk_meta_json_str = chunk_meta.model_dump_json(indent=2)
-                write_str(metadata_path, chunk_meta_json_str)
-                logger.info(f"Chunk {chunk_hash} already exists")
-                return
+        missing_sizes = [
+            size for size in embeding_sizes
+            if not os.path.exists(os.path.join(chunk_dir, f"{chunk_hash}-{embeding_model}-{size}.json"))
+        ]
+        if os.path.exists(chunk_text_path) and not missing_sizes:
+            chunk_meta_json_str = chunk_meta.model_dump_json(indent=2)
+            write_str(metadata_path, chunk_meta_json_str)
+            logger.info(f"Chunk {chunk_hash} already exists")
+            return
 
         os.makedirs(chunk_dir, exist_ok=True)
         if not os.path.exists(chunk_text_path):
