@@ -47,6 +47,7 @@ export function Chat() {
     const [questions, setQuestions] = useState<string[]>(defaultQuestions);
 
     async function handleCourseChange() {
+        localStorage.setItem('plct_courseKey', courseKey);
         const r_lessons = await fetch(
             `../api/toc-list`,
             {
@@ -59,8 +60,11 @@ export function Chat() {
             });
         const lessons = await r_lessons.json();
         setLessonList(lessons);
-        if (lessons.length > 0)
-            setLessonKey(lessons[0].key)
+        if (lessons.length > 0) {
+            const savedLesson = localStorage.getItem('plct_lessonKey');
+            const match = savedLesson && lessons.find((l: {key: string}) => l.key === savedLesson);
+            setLessonKey(match ? savedLesson : lessons[0].key);
+        }
     }
 
     useEffect(() => {
@@ -69,6 +73,7 @@ export function Chat() {
     }, [courseKey]); 
       
     async function handleLessonChange() {
+        localStorage.setItem('plct_lessonKey', lessonKey);
         const r_activities = await fetch(
             `../api/toc-list`,
             {
@@ -81,8 +86,11 @@ export function Chat() {
             });
         const activities = await r_activities.json()
         setActivityList(activities)
-        if (activities.length > 0)
-            await setActivityKey(activities[0].key)
+        if (activities.length > 0) {
+            const savedActivity = localStorage.getItem('plct_activityKey');
+            const match = savedActivity && activities.find((a: {key: string}) => a.key === savedActivity);
+            setActivityKey(match ? savedActivity : activities[0].key);
+        }
     }
 
     useEffect(() => {
@@ -91,12 +99,18 @@ export function Chat() {
     }, [lessonKey]); 
 
     useEffect(() => {
-        if(activitiyKey !== "-")
+        if(activitiyKey !== "-") {
+            localStorage.setItem('plct_activityKey', activitiyKey);
             setMessages([welcomeMessage])
             setHistory([])
             setCondensedHistory("")
             setQuestions(defaultQuestions)
+        }
     }, [activitiyKey]);
+
+    useEffect(() => {
+        console.log("courseKey:", courseKey, "activityKey:", activitiyKey);
+    }, [courseKey, activitiyKey]);
 
     async function postQuestion(question: string, withHistory = true) {
         const bodyJson = {
@@ -209,8 +223,11 @@ export function Chat() {
                 });
             const courses = await r_courses.json()
             setCourseList(courses);
-            if (courses.length > 0)
-                setCourseKey(courses[0].course_key)
+            if (courses.length > 0) {
+                const savedCourse = localStorage.getItem('plct_courseKey');
+                const match = savedCourse && courses.find((c: {course_key: string}) => c.course_key === savedCourse);
+                setCourseKey(match ? savedCourse : courses[0].course_key);
+            }
 
             const r_models = await fetch(
                 "../api/models",
@@ -222,8 +239,11 @@ export function Chat() {
                 });
             const models = await r_models.json()
             setModelList(models);
-            if (models.length > 0)
-                setModel(models[0].name)
+            if (models.length > 0) {
+                const savedModel = localStorage.getItem('plct_model');
+                const match = savedModel && models.find((m: {name: string}) => m.name === savedModel);
+                setModel(match ? savedModel : models[0].name);
+            }
             
             const statusResponse = await fetch("../api/chat", {
                 method: 'GET'
@@ -255,7 +275,7 @@ export function Chat() {
                     {activityList.map((c, i) => <option key={i} value={c.key}>{c.title}</option>)}
                 </select>
                 <br />
-                <select className="form-select" value={model} onChange={(e) => setModel(e.target.value)}>
+                <select className="form-select" value={model} onChange={(e) => { setModel(e.target.value); localStorage.setItem('plct_model', e.target.value); }}>
                     {modelList.map((m, i) => <option key={i} value={m.name}>{m.display_name}</option>)}
                 </select>
                 <br />
