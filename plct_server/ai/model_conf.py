@@ -43,6 +43,12 @@ MODEL_CONFIGS_LIST = [
         context_size=8_191
     ),
     ModelConfig(
+        name="gpt-5.2",
+        provider = ModelProvider.OPENAI,
+        type = "chat",
+        context_size=128_000
+    ),
+    ModelConfig(
         name="meta-llama/Llama-3.1-70B-Instruct",
         provider = ModelProvider.VLLM,
         type = "chat",

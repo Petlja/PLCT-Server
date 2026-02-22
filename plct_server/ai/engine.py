@@ -168,7 +168,7 @@ class AiEngine:
             model=config.name,
             messages=message,
             stream=stream,
-            max_tokens=max_tokens,
+            max_completion_tokens=max_tokens,
             temperature=0,
             extra_body= config.extra_body
         )
