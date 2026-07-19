@@ -1,7 +1,7 @@
+import asyncio
 import logging
-import os
 import json
-from typing import AsyncGenerator, List
+from typing import Any, AsyncGenerator, List
 from fastapi import APIRouter, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -31,16 +31,85 @@ class ChatModel(BaseModel):
     name: str
     display_name: str
 
-async def stream_response(answer, condensed_history, followup_questions) -> AsyncGenerator[bytes, None]:
-    metadata = {
-        "condensed_history": condensed_history,
-        "followup_questions": followup_questions
-    }
+PROGRESS_MESSAGES = {
+    "classifying": "Analiziram pitanje...",
+    "embedding": "Pripremam pretragu...",
+    "retrieving": "Tražim relevantne delove sadržaja...",
+    "preparing_answer": "Pripremam odgovor...",
+    "condensing_history": "Ažuriram kontekst razgovora...",
+    "generating_answer": "Generišem odgovor...",
+}
+ERROR_MESSAGE = "Ima tehničkih problema sa pristupom OpenAI, malo sačekaj pa pokušaj ponovo"
 
-    yield json.dumps(metadata).encode('utf-8') + b'\n'
 
-    async for chunk in answer:
-        yield chunk.encode('utf-8')
+def encode_event(event: dict[str, Any]) -> bytes:
+    return json.dumps(event, ensure_ascii=False).encode("utf-8") + b"\n"
+
+
+async def stream_response(input: ChatInput) -> AsyncGenerator[bytes, None]:
+    course_key = input.contextAttributes.get("course_key")
+    activity_key = input.contextAttributes.get("activity_key")
+    history = [(item.q, item.a) for item in input.history]
+    ai_engine = get_ai_engine()
+    event_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue(maxsize=20)
+
+    async def publish_progress(stage: str) -> None:
+        await event_queue.put({
+            "type": "progress",
+            "stage": stage,
+            "message": PROGRESS_MESSAGES[stage],
+        })
+
+    async def produce_events() -> None:
+        try:
+            generated_answer, followup_questions, _ = await ai_engine.generate_answer(
+                history=history,
+                query=input.question,
+                course_key=course_key,
+                activity_key=activity_key,
+                condensed_history=input.condensedHistory,
+                model_name=input.model,
+                progress_callback=publish_progress)
+
+            await publish_progress("condensing_history")
+            new_condensed_history = await ai_engine.generate_condensed_history(
+                history=history,
+                condensed_history=input.condensedHistory)
+
+            await event_queue.put({
+                "type": "metadata",
+                "condensed_history": new_condensed_history,
+                "followup_questions": followup_questions,
+            })
+            await publish_progress("generating_answer")
+
+            async for chunk in generated_answer:
+                await event_queue.put({"type": "content", "text": chunk})
+
+            await event_queue.put({"type": "done"})
+        except QueryError as error:
+            logger.error(f"QueryError: {error}")
+            await event_queue.put({"type": "error", "message": ERROR_MESSAGE})
+        except OpenAIError as error:
+            logger.warning(f"Error while calling OpenAI API: {error}")
+            await event_queue.put({"type": "error", "message": ERROR_MESSAGE})
+        except Exception:
+            logger.exception("Unexpected error while streaming chat response")
+            await event_queue.put({"type": "error", "message": ERROR_MESSAGE})
+        finally:
+            await event_queue.put(None)
+
+    producer_task = asyncio.create_task(produce_events())
+    try:
+        while True:
+            event = await event_queue.get()
+            if event is None:
+                break
+            yield encode_event(event)
+    finally:
+        if not producer_task.done():
+            producer_task.cancel()
+        await asyncio.gather(producer_task, return_exceptions=True)
 
 logger = logging.getLogger(__name__)
 
@@ -57,45 +126,17 @@ async def get_chat() -> Response:
     return Response(status_code=200)
 
 @router.post("/api/chat")
-async def post_question(response: Response, input: ChatInput) -> Response:
-    response.media_type = "text/plain; charset=utf-8"
+async def post_question(input: ChatInput) -> Response:
     logger.debug(f"Chat input: {input}")
     logger.debug(f"Context attributes: {input.contextAttributes}")
-    
-    course_key = input.contextAttributes.get("course_key")
-    activity_key = input.contextAttributes.get("activity_key")
-    history = [(item.q, item.a) for item in input.history]
-
-
-    ai_engine = get_ai_engine()
-    try:           
-        generated_answer, followup_questions, _ = await ai_engine.generate_answer(
-            history=history, 
-            query=input.question, 
-            course_key=course_key, 
-            activity_key=activity_key, 
-            condensed_history=input.condensedHistory,
-            model_name=input.model)  
-        
-        new_condensed_history = await ai_engine.generate_condensed_history(
-            history=history, 
-            condensed_history=input.condensedHistory)
-
-        return StreamingResponse(
-            stream_response(
-                generated_answer,
-                new_condensed_history,
-                followup_questions),
-            media_type="text/plain")
-    
-    except QueryError as e:
-        logger.error(f"QueryError: {e}")
-        return Response("Ima tehničkih problema sa pristupom OpenAI, malo sačekaj pa pokušaj ponovo",
-                         media_type="text/plain")
-    except OpenAIError as e:
-        logger.warn(f"Error while calling OpenAI API: {e}")
-        return Response("Ima tehničkih problema sa pristupom OpenAI, malo sačekaj pa pokušaj ponovo",
-                         media_type="text/plain")
+    return StreamingResponse(
+        stream_response(input),
+        media_type="application/x-ndjson",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Content-Type-Options": "nosniff",
+            "X-Accel-Buffering": "no",
+        })
     
 
 class CourseItem(BaseModel):

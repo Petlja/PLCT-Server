@@ -14,6 +14,7 @@ import Select from 'react-select';
 import { AppContext } from "../AppContext";
 import  ChatSampleQuestions from "./ChatSampleQuestions";
 import { useSearchParams } from 'react-router-dom';
+import { readChatEvents } from "../chatStream";
 import "./Chat.css";
 
 const welcomeMessage: MessageModel = {
@@ -31,6 +32,7 @@ const defaultQuestions = ["Napravi mi pitanja za test iz ove lekcije.",
 export function Chat() {
     const [messages, setMessages] = useState<MessageModel[]>([welcomeMessage]);
     const [isAnswering, setAnswering] = useState(false);
+    const [progressMessage, setProgressMessage] = useState("");
     const [auth, setAuth] = useState("pending");
     const [history, setHistory] = useState<{ q: string; a: string }[]>([]);
     const [condensedHistory, setCondensedHistory] = useState<string>("");
@@ -127,7 +129,7 @@ export function Chat() {
                 method: 'POST',
                 body: JSON.stringify(bodyJson),
                 headers: {
-                    "Accept": "application/json",
+                    "Accept": "application/x-ndjson",
                     "Content-Type": "application/json"
                 }
             });
@@ -138,8 +140,8 @@ export function Chat() {
         textContent: string
     ) {
         setAnswering(true);
+        setProgressMessage("Šaljem pitanje...");
         setQuestions([]);
-        const utf8decoder = new TextDecoder("utf-8");
 
         const outMessage: MessageModel = {
             direction: "outgoing",
@@ -149,61 +151,56 @@ export function Chat() {
         };
 
         setMessages([...messages, outMessage]);
+        let answerText = "";
 
-        const r = await postQuestion(textContent);
-        var hasInitialData = false;   
-        var answerText = "";
-
-        const reader = r.body!.getReader()
-
-        while(true) {
-            const { done, value } = await reader.read();
-            if (done)
-                break;
-
-            const chunkText = utf8decoder.decode(value);
-            if (!hasInitialData) {
-                const metadataEndIndex = chunkText.indexOf('\n');
-                if (metadataEndIndex !== -1) {
-                        const jsonText = chunkText.slice(0, metadataEndIndex);
-                        const metadata = JSON.parse(jsonText);
-
-                        let condensedHistory = metadata.condensed_history;
-                        let followupQuestions = metadata.followup_questions;
-
-                        if (condensedHistory !== "")
-                            setCondensedHistory(condensedHistory ? condensedHistory : "");
-
-                        if (followupQuestions) {
-                                setQuestions(followupQuestions); 
-                        }
-                        else{
-                            setQuestions([]);
-                        }
-                
-                        hasInitialData = true;
-                        answerText += chunkText.slice(metadataEndIndex + 1);
+        try {
+            const response = await postQuestion(textContent);
+            await readChatEvents(response, event => {
+                switch (event.type) {
+                    case "progress":
+                        setProgressMessage(event.message);
+                        break;
+                    case "metadata":
+                        if (event.condensed_history)
+                            setCondensedHistory(event.condensed_history);
+                        setQuestions(event.followup_questions ?? []);
+                        break;
+                    case "content": {
+                        setProgressMessage("");
+                        answerText += event.text;
+                        const answerHtml = marked.parse(answerText);
+                        const inMessage: MessageModel = {
+                            direction: "incoming",
+                            message: "<div class='answer-wrapper'>" + answerHtml + "</div>",
+                            position: "normal",
+                            sender: "Čet.kabinet",
+                        };
+                        setMessages([...messages, outMessage, inMessage]);
+                        break;
+                    }
+                    case "error":
+                        throw new Error(event.message);
+                    case "done":
+                        setProgressMessage("");
+                        break;
                 }
-                else{
-                    answerText += chunkText;
-                }
-            } else {
-                answerText += chunkText;
-            }
-
-            const answerHtml = marked.parse(answerText)
+            });
+            setHistory([...history, { q: textContent, a: answerText }]);
+        } catch (error) {
+            const errorMessage = error instanceof Error
+                ? error.message
+                : "Došlo je do greške pri generisanju odgovora";
             const inMessage: MessageModel = {
                 direction: "incoming",
-                message: "<div class='answer-wrapper'>" + answerHtml + "</div>",
+                message: errorMessage,
                 position: "normal",
                 sender: "Čet.kabinet",
             };
             setMessages([...messages, outMessage, inMessage]);
-
-        };
-
-        setHistory([...history, { q: textContent, a: answerText }]);
-        setAnswering(false);
+        } finally {
+            setProgressMessage("");
+            setAnswering(false);
+        }
     }
 
     const handleQuestionClick = async (question: string) => {
@@ -283,7 +280,7 @@ export function Chat() {
                     <ChatContainer>
                         <MessageList
                             typingIndicator={
-                                isAnswering && <TypingIndicator  />
+                                isAnswering && <TypingIndicator content={progressMessage} />
                             }
                         >
                             {messages.map((v, i) => (

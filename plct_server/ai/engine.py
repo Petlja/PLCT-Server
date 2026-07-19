@@ -4,7 +4,7 @@ import tiktoken
 from chromadb.config import Settings
 
 from tiktoken import Encoding
-from typing import Any, AsyncIterator, Coroutine, Union
+from typing import Any, AsyncIterator, Awaitable, Callable, Coroutine, Union
 from openai import AsyncAzureOpenAI, AsyncOpenAI
 from openai.types.chat import ChatCompletion
 
@@ -49,6 +49,12 @@ EMBEDDING_MODEL = "text-embedding-3-large"
 EMBEDDING_SIZE = 1536
 CDB_COLLECTION_NAME = f"{EMBEDDING_MODEL}-{EMBEDDING_SIZE}"
 PETLJA_DOCS_COURSE_KEY = "petlja-docs"
+ProgressCallback = Callable[[str], Awaitable[None]]
+
+
+async def report_progress(progress_callback: ProgressCallback | None, stage: str) -> None:
+    if progress_callback:
+        await progress_callback(stage)
 
 
 class AiEngine:
@@ -289,7 +295,9 @@ class AiEngine:
     
     
     async def make_system_message(self, history: list[tuple[str,str]], query: str,
-                                   course_key: str, activity_key: str, condensed_history: str, query_context : QueryContext = None) -> tuple[str, list[str]]:
+                                   course_key: str, activity_key: str, condensed_history: str,
+                                   query_context: QueryContext = None,
+                                   progress_callback: ProgressCallback | None = None) -> tuple[str, list[str]]:
             
         if condensed_history:
             condensed_history_segment = system_message_condensed_history_template.format(condensed_history=condensed_history)
@@ -297,6 +305,7 @@ class AiEngine:
         else:
             condensed_history_segment = ""
 
+        await report_progress(progress_callback, "classifying")
         structured_output = await self.preprocess_query(
             query=query,
             history=history,
@@ -307,12 +316,14 @@ class AiEngine:
 
         logger.debug(f"structured_output: {structured_output}")
 
+        await report_progress(progress_callback, "embedding")
         query_embedding = await self._create_embedding(
             input=structured_output.restated_question  or query,
             encoding_format="float",
             dimensions=EMBEDDING_SIZE
         )
 
+        await report_progress(progress_callback, "retrieving")
         rag_segment, chunk_metadata = self._get_rag_segment(
             structured_output=structured_output,
             query_embedding=query_embedding,
@@ -358,13 +369,16 @@ class AiEngine:
         return system_message, structured_output.followup_questions
 
     async def generate_answer(self,*, history: list[tuple[str,str]], query: str,
-                            course_key: str, activity_key: str, condensed_history: str, model_name) -> tuple[AsyncIterator[int], list[str], QueryContext]:
+                            course_key: str, activity_key: str, condensed_history: str, model_name,
+                            progress_callback: ProgressCallback | None = None) -> tuple[AsyncIterator[str], list[str], QueryContext]:
         query_context = QueryContext()
 
         if condensed_history:
             history = [history.pop()]
             
-        system_message, followup_questions = await self.make_system_message(history, query, course_key, activity_key, condensed_history, query_context)
+        system_message, followup_questions = await self.make_system_message(
+            history, query, course_key, activity_key, condensed_history, query_context,
+            progress_callback)
         
         messages = create_message(system_message, history, query)
 
@@ -372,6 +386,7 @@ class AiEngine:
             query_context.add_encoding_length("history", item[0] + item[1], self.encoding) 
         query_context.add_encoding_length("user_query", query, self.encoding)
 
+        await report_progress(progress_callback, "preparing_answer")
         response = await self._handle_query_submission(
             message= messages,
             max_tokens= 2000, 
