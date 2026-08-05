@@ -8,10 +8,10 @@
     "bootstrap": "^5.3.3",
     "marked": "^17.0.2",
     "marked-highlight": "^2.2.3",
-    "react": "^19.2.4",
+    "react": "^19.2.8",
     "react-cookie": "^8.0.1",
-    "react-dom": "^19.2.4",
-    "react-router-dom": "^7.13.0",
+    "react-dom": "^19.2.8",
+    "react-router": "^8.3.0",
     "react-select": "^5.10.2",
     "reactstrap": "^9.2.3",
     "web-vitals": "^5.1.0"

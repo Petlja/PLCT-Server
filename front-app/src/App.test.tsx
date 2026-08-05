@@ -1,7 +1,7 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import { CookiesProvider } from 'react-cookie';
-import { BrowserRouter } from 'react-router-dom';
+import { BrowserRouter } from 'react-router';
 import { vi, beforeEach, afterEach } from 'vitest';
 import App from './App';
 

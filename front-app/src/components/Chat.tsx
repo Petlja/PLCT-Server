@@ -13,7 +13,7 @@ import { marked } from 'marked';
 import Select from 'react-select';
 import { AppContext } from "../AppContext";
 import  ChatSampleQuestions from "./ChatSampleQuestions";
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router';
 import { readChatEvents } from "../chatStream";
 import "./Chat.css";
 

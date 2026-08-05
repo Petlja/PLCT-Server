@@ -1,6 +1,6 @@
 import 'bootstrap/dist/css/bootstrap.css';
 import React from 'react';
-import { BrowserRouter as Router} from 'react-router-dom';
+import { BrowserRouter as Router} from 'react-router';
 import { CookiesProvider } from 'react-cookie';
 import ReactDOM from 'react-dom/client';
 import './index.css';
