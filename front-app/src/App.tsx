@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useCookies } from 'react-cookie';
-import { Route, Routes } from 'react-router-dom';
+import { Route, Routes } from 'react-router';
 import { Layout } from './components/Layout';
 import { Home } from "./components/Home";
 import { Chat } from "./components/Chat"

@@ -1,6 +1,6 @@
 // import { useContext } from 'react'
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link } from 'react-router';
 //import { AppContext } from "../AppContext";
 
 class CourseItem {
