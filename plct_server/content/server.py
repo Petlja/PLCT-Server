@@ -16,6 +16,9 @@ from .fileset import FileSet, LocalFileSet
 from ..ioutils import  read_str
 from .course import CourseContent, TocItem, load_course
 from ..ai import engine
+from .. import knowledge
+from ..knowledge.config import (COURSES_KEY, DEFAULT_CACHE_DIR, SourceSpec,
+                                resolve_sources)
 
 ENV_NAME_OPENAI_API_KEY = "CHATAI_OPENAI_API_KEY"
 ENV_NAME_AZURE_API_KEY = "CHATAI_AZURE_API_KEY"
@@ -39,7 +42,11 @@ class ConfigOptions(BaseSettings):
             return l
         return v
     
-    ai_ctx_url: str | None = None
+    # Every body of indexed knowledge the server retrieves from. Each is mirrored to
+    # `knowledge_cache_dir` at startup and indexed into its own collection.
+    knowledge_sources: list[SourceSpec] = []
+    knowledge_cache_dir: str = DEFAULT_CACHE_DIR
+
     verbose: bool | None = None
     api_key: str | None = None
     azure_default_ai_endpoint: str | None = None
@@ -99,9 +106,10 @@ def get_server_content() -> ServerContent:
     return _server_content
 
 def load_config(*, course_urls: tuple[str] = None, config_file: str = None, verbose: bool = None,
-                ai_ctx_url: str = None, azure_default_ai_endpoint: str = None) -> ConfigOptions:
+                knowledge_sources: Sequence[SourceSpec] = None,
+                azure_default_ai_endpoint: str = None) -> ConfigOptions:
     """Load and resolve configuration from file, CLI args, and environment variables."""
-    logger.debug(f"Loading config with course_urls: {course_urls}, config_file: {config_file}, verbose: {verbose}, ai_ctx_url: {ai_ctx_url}, azure_default_ai_endpoint: {azure_default_ai_endpoint}")
+    logger.debug(f"Loading config with course_urls: {course_urls}, config_file: {config_file}, verbose: {verbose}, knowledge_sources: {knowledge_sources}, azure_default_ai_endpoint: {azure_default_ai_endpoint}")
     conf: ConfigOptions = None
     cfg_file = config_file or os.environ.get("PLCT_SERVER_CONFIG_FILE") 
     default_course_urls = "plct-server-config.yaml"
@@ -142,15 +150,18 @@ def load_config(*, course_urls: tuple[str] = None, config_file: str = None, verb
                 logger.debug(f"Configuration loaded from '{cfg_url}'")
                 conf.content_url = urljoin(cfg_url, conf.content_url or ".")
                 logger.debug(f"Content URL set to '{conf.content_url}'")
-                conf.ai_ctx_url = urljoin(cfg_url, conf.ai_ctx_url)
+                # Source urls resolve against the config file, so a relative path in
+                # the file means what it looks like it means.
+                for source in conf.knowledge_sources:
+                    source.url = urljoin(cfg_url, source.url)
             except (OSError, ValueError, TypeError)as e:
                 logger.error(f"Error loading the configuration file '{cfg_file}': {e}")
     if conf is None:
         conf = ConfigOptions()
     if course_urls:
         conf.course_urls = course_urls
-    if ai_ctx_url:
-        conf.ai_ctx_url = ai_ctx_url
+    if knowledge_sources:
+        conf.knowledge_sources = list(knowledge_sources)
     if verbose:
         conf.verbose = verbose
     if azure_default_ai_endpoint:
@@ -188,17 +199,24 @@ def init_ai_engine(conf: ConfigOptions) -> None:
         azure_default_ai_endpoint=conf.azure_default_ai_endpoint
     )
 
-    if conf.ai_ctx_url:
-        logger.info(f"Initializing AI engine with context URL: {conf.ai_ctx_url}")
-        engine.init(ai_ctx_url=conf.ai_ctx_url, client_factory=client_factory)
+    sources = resolve_sources(conf)
+    if sources:
+        logger.info("Knowledge sources:\n "
+                    + "\n ".join(f"{s.key} [{s.type}] {s.url}" for s in sources))
+        # Mirrors every source to local disk, then indexes each into its own collection.
+        # Blocks until they are loaded: the server must not accept traffic without them.
+        store = knowledge.init(sources=sources, cache_dir=conf.knowledge_cache_dir)
+        engine.init(store=store, client_factory=client_factory)
         course_keys = engine.get_ai_engine().ctx_data.course_dict.keys()
         logger.info(f"Courses in AI Context: {', '.join(course_keys)}")
 
 def configure(*, course_urls: tuple[str] = None, config_file: str = None, verbose: bool = None,
-              ai_ctx_url: str = None, azure_default_ai_endpoint: str = None) -> None:
+              knowledge_sources: Sequence[SourceSpec] = None,
+              azure_default_ai_endpoint: str = None) -> None:
     """Umbrella method that loads config, initializes server content, and starts the AI engine."""
     conf = load_config(course_urls=course_urls, config_file=config_file, verbose=verbose,
-                       ai_ctx_url=ai_ctx_url, azure_default_ai_endpoint=azure_default_ai_endpoint)
+                       knowledge_sources=knowledge_sources,
+                       azure_default_ai_endpoint=azure_default_ai_endpoint)
     init_server_content(conf)
     init_ai_engine(conf)
 

@@ -1,3 +1,15 @@
 verbose: false
 course_project_dirs: []
-ai_ctx_url: ai-context
+
+# Every body of indexed knowledge the server retrieves from. Each is mirrored to
+# knowledge_cache_dir at startup and indexed into its own collection. `url` is an
+# http(s) base or a local path.
+knowledge_sources:
+  - key: courses
+    type: plct-ai-ctx
+    url: ai-context
+  - key: handbook
+    type: aikt-bundle
+    url: "aikt-context"
+
+knowledge_cache_dir: ".cache/knowledge"

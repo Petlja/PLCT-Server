@@ -1,7 +1,5 @@
 import logging
-import chromadb
 import tiktoken
-from chromadb.config import Settings
 
 from tiktoken import Encoding
 from typing import Any, AsyncIterator, Awaitable, Callable, Coroutine, Union
@@ -10,8 +8,8 @@ from openai.types.chat import ChatCompletion
 
 from plct_server.ai.client import AiClientFactory
 
+from ..knowledge import COURSES_KEY, KnowledgeStore
 from .model_conf import ModelConfig, ModelProvider, MODEL_CONFIGS_LIST
-from .context_dataset import ContextDataset
 from .query_context import QueryContext, QueryError
 from .structured_outputs.query_classification import TOOLS_CHOICE_DEF, TOOLS_DEF, Classification, QueryLanguage, StructuredOutputResponse, get_answer_language, parse_query_classification
 
@@ -21,10 +19,10 @@ logger = logging.getLogger(__name__)
 
 ai_engine: "AiEngine" = None
 
-def init(*, ai_ctx_url: str, client_factory: AiClientFactory) -> None:
+def init(*, store: KnowledgeStore, client_factory: AiClientFactory) -> None:
     global ai_engine
     if ai_engine is None:
-        ai_engine = AiEngine(ai_ctx_url=ai_ctx_url, 
+        ai_engine = AiEngine(store=store,
                              client_factory=client_factory)
     else:
         raise ValueError(f"{__name__} already initialized")
@@ -47,7 +45,6 @@ def create_message(system : str, history: list[dict[str, str]], query) -> list[d
 CHAT_MODEL = "gpt-4o-mini"
 EMBEDDING_MODEL = "text-embedding-3-large"
 EMBEDDING_SIZE = 1536
-CDB_COLLECTION_NAME = f"{EMBEDDING_MODEL}-{EMBEDDING_SIZE}"
 PETLJA_DOCS_COURSE_KEY = "petlja-docs"
 ProgressCallback = Callable[[str], Awaitable[None]]
 
@@ -62,14 +59,13 @@ class AiEngine:
 
     _model_config_dict: dict[str, ModelConfig] = dict()
     
-    def __init__(self, *, ai_ctx_url: str, client_factory: AiClientFactory):
-        logger.debug(f"ai_ctx_url: {ai_ctx_url}")
+    def __init__(self, *, store: KnowledgeStore, client_factory: AiClientFactory):
         self.client_factory = client_factory
-        self.ctx_data = ContextDataset(ai_ctx_url)
-        self.ch_cli = chromadb.Client(Settings(anonymized_telemetry=False))
-        self.encoding : Encoding = tiktoken.encoding_for_model(EMBEDDING_MODEL) 
+        self.store = store
+        self.courses = store.source(COURSES_KEY)
+        self.ctx_data = self.courses.ctx
+        self.encoding : Encoding = tiktoken.encoding_for_model(EMBEDDING_MODEL)
         self._load_model_configs()
-        self._load_embeddings()
 
     def add_model_config(self, model_config: ModelConfig) -> None:
         if model_config.display_name is None:
@@ -112,33 +108,6 @@ class AiEngine:
         return model_config
 
 
-    def _load_embeddings(self):
-        collection = self.ch_cli.create_collection(
-            name=f"{CDB_COLLECTION_NAME}",
-            metadata={"hnsw:space": "ip"})
-
-        logger.debug(f"Loading embeddings {EMBEDDING_MODEL}-{EMBEDDING_SIZE}")
-        embeddings, ids, metadata = self.ctx_data.get_embeddings_data(EMBEDDING_MODEL, EMBEDDING_SIZE)
-
-        max_batch_size = self.ch_cli.get_max_batch_size()
-        total_size = len(embeddings)
-        logger.debug(f"Indexing embeddings {EMBEDDING_MODEL}-{EMBEDDING_SIZE} in batches of {max_batch_size}")
-        for start_idx in range(0, total_size, max_batch_size):
-            end_idx = min(start_idx + max_batch_size, total_size)
-            
-            batch_embeddings = embeddings[start_idx:end_idx]
-            batch_ids = ids[start_idx:end_idx]
-            batch_metadata = metadata[start_idx:end_idx]
-            
-            logger.debug(f"Finished loading embeddings in batch ({start_idx}-{end_idx})")
-            collection.add(
-                embeddings=batch_embeddings,
-                ids=batch_ids,
-                metadatas=batch_metadata
-            )
-
-        logger.debug(f"Embeddings loaded and indexed {EMBEDDING_MODEL}-{EMBEDDING_SIZE}")
-    
     def _get_async_openai_client(self, requested_model: str | None) -> Union[AsyncOpenAI, AsyncAzureOpenAI]:
         logger.debug(f"Creating AI client")
         model_config = self.get_model_config(requested_model)
@@ -185,7 +154,7 @@ class AiEngine:
             return completion.choices[0].message.content
         
 
-    async def _create_embedding(self, input: str, encoding_format: str, dimensions: int) -> str:
+    async def _create_embedding(self, input: str, encoding_format: str, dimensions: int) -> list[float]:
         client = self._get_async_openai_client(
             requested_model= EMBEDDING_MODEL
         )
@@ -205,7 +174,7 @@ class AiEngine:
         )
         return response.data[0].embedding
     
-    def _generate_chroma_filter(self, structured_output: StructuredOutputResponse, course_key: str, activity_key: str) -> tuple[Classification, dict[str, str], int]:
+    def _generate_chroma_filter(self, structured_output: StructuredOutputResponse, course_key: str, activity_key: str) -> tuple[dict[str, str], int]:
         if structured_output.classification == Classification.COURSE:
             where = {"course_key": course_key}
             n_results = 2
@@ -220,33 +189,23 @@ class AiEngine:
             n_results = 0
         return where, n_results
         
-    def _get_rag_segment(self, structured_output: StructuredOutputResponse, query_embedding: str,
+    def _get_rag_segment(self, structured_output: StructuredOutputResponse, query_embedding: list[float],
                           course_key: str, activity_key: str) -> tuple[str, list[dict[str, str]]]:
         
         if structured_output.classification == Classification.UNSURE:
             return "", []
         
-        collection = self.ch_cli.get_collection(CDB_COLLECTION_NAME)
         where, n_results = self._generate_chroma_filter(structured_output, course_key, activity_key)
 
-        result = collection.query(
-            query_embeddings=[query_embedding],
-            where=where,
-            n_results=n_results
-        )
-
+        hits = self.courses.search(query_embedding, k=n_results, where=where)
 
         chunk_strs : list[str, str] = []
         chunk_metadata : list[dict[str, str]] = []
-        chunk_hash : str
-        dist : float
-        metadata : dict[str, str]
 
-        for chunk_hash, dist, metadata in zip(result["ids"][0], result["distances"][0], result["metadatas"][0]):
-            metadata["distance"] = str(dist)
-            chunk_metadata.append(metadata)
-            chunk_str = self.ctx_data.get_chunk_text(chunk_hash)
-            chunk_strs.append(chunk_str)
+        for hit in hits:
+            hit.metadata["distance"] = str(hit.distance)
+            chunk_metadata.append(hit.metadata)
+            chunk_strs.append(hit.text)
 
 
         logger.debug(f"chunk_metadata: {chunk_metadata}")

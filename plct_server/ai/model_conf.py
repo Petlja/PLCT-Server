@@ -43,6 +43,14 @@ MODEL_CONFIGS_LIST = [
         context_size=8_191
     ),
     ModelConfig(
+        name="text-embedding-3-small",
+        provider = None,  # use default provider
+        azure_deployment_name="text-embedding-3-small",
+        azure_api_version="2023-05-15",
+        type = "embedding",
+        context_size=8_191
+    ),
+    ModelConfig(
         name="gpt-5.2",
         provider = ModelProvider.OPENAI,
         type = "chat",

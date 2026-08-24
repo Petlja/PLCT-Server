@@ -8,3 +8,5 @@ build/
 plct-server-config.yaml
 /plct_server/eval/results
 /.vscode
+.cache/
+/tools/
