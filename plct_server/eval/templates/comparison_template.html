@@ -90,23 +90,6 @@
             width: 48%;
         }
 
-        .ai-assessment {
-            color: white;
-            font-size: 10px;
-            position: absolute;
-            top: -5px;
-            right: 0px;
-            background-color: rgba(0, 0, 0, 0.5);
-            padding: 2px 5px;
-            border-radius: 3px;
-            opacity: 0;
-            transition: opacity 0.3s;
-        }
-
-        .response:hover .ai-assessment {
-            opacity: 1;
-        }
-
         .benchmark {
             background-color: #82acef;
             position: relative;
@@ -230,9 +213,6 @@ System Query: {{ conversation.query_context.system_message }}</div></div>
             <div class="compare">
                 <div class="chat-message response {{ 'left' }}">
                     {{ conversation.response | safe }}
-                    {% if conversation.ai_assessment is not none %}
-                    <div class="ai-assessment">Ocena slicnosti: {{ conversation.ai_assessment }}</div>
-                    {% endif %}
                 </div>
 
                 <div class="chat-message benchmark right {{ 'feedback-positive' if conversation.feedback == 1 else 'feedback-negative' if conversation.feedback == 0 else '' }}"

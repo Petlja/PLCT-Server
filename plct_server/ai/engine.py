@@ -395,26 +395,3 @@ class AiEngine:
         logger.debug(f"condensed_history: {response}")
 
         return response
-    
-    async def compare_strings(self, response_text: str, benchmark_text: str) -> int:         
-        compare_prompt_message = compare_prompt.format(
-            current_text=response_text,
-            benchmark_text=benchmark_text
-        )
-
-        messages = create_message(
-            system= system_compare_template,
-            history=[],
-            query=compare_prompt_message)
-
-        response = await self._handle_query_submission(
-            message=messages,
-            max_tokens= 50, 
-            stream=False)
-
-        try:
-            similarity_score = int(response)
-        except ValueError:
-            similarity_score = -1 
-        logger.debug(f"similarity_score: {similarity_score}")
-        return similarity_score

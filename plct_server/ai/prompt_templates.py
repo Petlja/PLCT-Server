@@ -96,23 +96,6 @@ system_message_rag_template = (
     "{chunks}\n\n"
 )
 
-system_compare_template = (
-    "Your answer should be a number representing the similarity score, where 0 means the information is completely different and 5 means the information is very similar.\n\n"
-    "Give no additional information, just the number.\n\n"
-)
-
-compare_prompt = (
-    "Here are the two answers delimited by triple quotes.\n\n"
-    "'''\n"
-    "Answers 1:\n"
-    "{current_text}\n"
-    "'''\n\n"
-    "Answers 2:\n"
-    "'''\n"
-    "{benchmark_text}\n"
-    "'''\n\n"
-)
-
 system_message_condensed_history_template = (
     "Here is the summary of previous teacher questions and assistant explanations delimited by triple quotes \n\n"
     "'''\n"

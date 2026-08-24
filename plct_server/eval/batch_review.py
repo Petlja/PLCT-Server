@@ -24,7 +24,6 @@ class Conversation(BaseModel):
     course_key: str
     activity_key: str
     feedback: Optional[int] = None
-    ai_assessment: Optional[int] = None
     query_context: Optional[QueryContext]= None
     model : Optional[str] = None
 
@@ -95,7 +94,7 @@ async def batch_prompt_conversations(conversation_dir: str, batch_name: str, set
 
     await process_conversations(conversation_dir, output_dir, set_benchmark, model)
 
-async def generate_html_report(batch_name: str, use_ai_to_compare: bool) -> None:
+async def generate_html_report(batch_name: str) -> None:
     conversation_path = os.path.join(RESULT_DIR, batch_name)
 
     conversations_dict = load_conversations(conversation_path)
@@ -103,11 +102,6 @@ async def generate_html_report(batch_name: str, use_ai_to_compare: bool) -> None
 
     for conversation in conversations:
         conversation.transform_markdown()
-        if use_ai_to_compare:
-            conversation.ai_assessment = await get_ai_assessment(
-                conversation.response, 
-                conversation.benchmark_response
-                )
 
     template_content = read_str(COMPARISON_TEMPLATE)
     template = jinja2.Template(template_content)
@@ -116,8 +110,3 @@ async def generate_html_report(batch_name: str, use_ai_to_compare: bool) -> None
     report_path = os.path.join(RESULT_DIR, batch_name, 'report.html')
     write_str(report_path, html_content)
     logger.info(f"Report generated at {report_path}")
-
-
-async def get_ai_assessment(response: str, benchmark_response: str) -> int:
-    ai_engine = get_ai_engine()
-    return await ai_engine.compare_strings(response, benchmark_response)

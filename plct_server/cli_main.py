@@ -56,18 +56,17 @@ def serve(folders: tuple[str], config : str, host: str, port: int, verbose:bool,
 @click.option("-n", "--batch-name", default=uuid4(), help="Batch name")
 @click.option("-b", "--set-benchmark", is_flag=True, help="Set responses as the benchmark responses")
 @click.option("-v", "--verbose", is_flag=True, help="Enable verbose logging")
-@click.option("-c", "--compare-with-ai", is_flag=True, help="Compare responses with AI")
 @click.option("-d", "--conversation-dir", type = click.Path(exists=True, file_okay=False, dir_okay=True),default=CONVERSATION_DIR, help="Directory holding pre-arranged conversations")
 @click.option("-m", "--model", default ="gpt-4o" ,help="default model to use")
 @click.option("-nr", "--no-report", is_flag=True, help="Do not generate HTML report", default=False)
-def batch_review(ai_context:str, batch_name:str, set_benchmark: bool, verbose, compare_with_ai: bool, conversation_dir: str, model : str, no_report: bool) -> None:
+def batch_review(ai_context:str, batch_name:str, set_benchmark: bool, verbose, conversation_dir: str, model : str, no_report: bool) -> None:
     import platform
     if platform.system()=='Windows':
        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     
-    asyncio.run(batch_review_async(ai_context, batch_name, set_benchmark, verbose, compare_with_ai, conversation_dir, model, no_report))
+    asyncio.run(batch_review_async(ai_context, batch_name, set_benchmark, verbose, conversation_dir, model, no_report))
     
-async def batch_review_async(ai_context:str, batch_name:str, set_benchmark: bool, verbose, compare_with_ai: bool, conversation_dir: str, model : str, no_report: bool) -> None:
+async def batch_review_async(ai_context:str, batch_name:str, set_benchmark: bool, verbose, conversation_dir: str, model : str, no_report: bool) -> None:
     server.configure(
         knowledge_sources=course_sources(ai_context),
         verbose=verbose)
@@ -77,7 +76,7 @@ async def batch_review_async(ai_context:str, batch_name:str, set_benchmark: bool
 
     if not (set_benchmark or no_report):
         logger.info("Generating HTML report")
-        await generate_html_report(batch_name, compare_with_ai)
+        await generate_html_report(batch_name)
 
 # This is the entry point for the server (see pyproject.toml)
 def cli() -> None:

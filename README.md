@@ -242,7 +242,6 @@ Ways to run the command:
 - `-n`, `--batch-name`: Batch name (default: a newly generated UUID)
 - `-b`, `--set-benchmark`: Set responses as the benchmark responses
 - `-v`, `--verbose`: Enable verbose logging
-- `-c`, `--compare-with-ai`: Compare responses with AI
 - `-d`, `--conversation-dir`: Directory holding pre-arranged conversations (default: `eval/conversations/default`)
 - `-m`, `--model` : Model to be used in every conversation instance. If not given the conversations will be done by the default model or the model defined in the conversation instance
 - `-nr`, `--no-report` : Optionally you can disable the creation of the report
