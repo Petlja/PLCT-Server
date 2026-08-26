@@ -372,7 +372,7 @@ export PLCT_SERVER_CONFIG_FILE=plct-server-config.yaml
 uv run uvicorn plct_server.ui_main:app --host 127.0.0.1 --port 9000
 ```
 
-Use `plct_server.ui_main:app` for the full UI + API, or `plct_server.rag_main:app` for the RAG API only.
+Use `plct_server.ui_main:app` for the UI and the chat API.
 
 ## Final Project Structure
 

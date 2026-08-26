@@ -48,9 +48,12 @@ class ConfigOptions(BaseSettings):
     knowledge_cache_dir: str = DEFAULT_CACHE_DIR
 
     verbose: bool | None = None
-    api_key: str | None = None
     azure_default_ai_endpoint: str | None = None
     vllm_url: str | None = None
+
+    # Retired, but still accepted: this model forbids extra keys, so dropping the field
+    # would make every deployed config carrying it fall back to defaults.
+    api_key: str | None = None
 
 class ServerContent:
 
@@ -169,6 +172,9 @@ def load_config(*, course_urls: tuple[str] = None, config_file: str = None, verb
     if conf.verbose is not None:
         level = logging.DEBUG if conf.verbose else logging.INFO
         logging.getLogger().setLevel(level)
+    if conf.api_key:
+        logger.warning("'api_key' is set but no longer used: /api/rag-system-message is "
+                       "gone and /api/chat is unauthenticated. Remove it from the config.")
     logger.debug(f"ConfigOptions: {conf}")
     return conf
 

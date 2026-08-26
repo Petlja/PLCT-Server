@@ -6,7 +6,7 @@ from logging import getLogger
 from fastapi import FastAPI
 from uuid import uuid4
 from .eval.batch_review import batch_prompt_conversations, generate_html_report, CONVERSATION_DIR
-from .endpoints import get_ui_router, get_rag_router
+from .endpoints import get_ui_router
 from .content import server
 from .knowledge.config import COURSES_KEY, SourceSpec
 

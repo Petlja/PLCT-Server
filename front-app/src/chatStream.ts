@@ -1,6 +1,5 @@
 export type ChatEvent =
-    | { type: "progress"; stage: string; message: string }
-    | { type: "metadata"; condensed_history: string; followup_questions: string[] }
+    | { type: "progress"; stage: string; message: string; detail?: string }
     | { type: "content"; text: string }
     | { type: "error"; message: string }
     | { type: "done" };

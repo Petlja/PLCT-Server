@@ -1,24 +1,13 @@
-"""One Chroma client, one collection per source.
-
-Collections are independent by construction: each owns its index, its dimensionality, its
-distance space and its metadata schema, and Chroma validates none of that across
-collections. So the course dataset (`text-embedding-3-large`@1536, inner product) and an
-AI-Knowledge-Tools bundle (`text-embedding-3-small`@1536, cosine) coexist in one client
-with no coupling at all -- two tables in one database.
-
-The store is a registry and a lifecycle owner, not a query planner. `store.source(key)`
-hands back one source and the caller searches that one; there is deliberately no
-`search_all()`. A question is routed to a source, and that source embeds it with the model
-that built its vectors.
+"""One Chroma client, one collection per source. Each owns its index,
+dimensionality, distance space and metadata schema; there is no search_all().
 """
 
-from __future__ import annotations
-
+import functools
 import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Awaitable, Callable, Iterable
 
 import chromadb
 from chromadb.config import Settings
@@ -65,6 +54,17 @@ class KnowledgeSource:
     def collection_name(self) -> str:
         return f"{self.key}-{self.embedding_model}-{self.embedding_dimensions}"
 
+    def query_embedder(self, embed: Callable[..., Awaitable[list[float]]]
+                       ) -> Callable[[str], Awaitable[list[float]]]:
+        """`embed` bound to this source's own model and dimensionality.
+
+        A query vector only means anything against the index it was built to match, and
+        two sources here already use different embedders at the same width. Binding once,
+        where the source is known, keeps every call site from having to remember.
+        """
+        return functools.partial(embed, model=self.embedding_model,
+                                 dimensions=self.embedding_dimensions)
+
     def load(self, client) -> None:
         """Create this source's collection and fill it. Called once, at startup."""
         raise NotImplementedError
@@ -94,6 +94,18 @@ class KnowledgeSource:
 
     def _metadata_for(self, record_id: str, chroma_metadata: dict) -> dict:
         return dict(chroma_metadata or {})
+
+    def get(self, where: dict) -> dict[str, dict]:
+        """Every record matching a metadata filter: record_id -> metadata.
+
+        The other way in beside `search`, for callers that want a page rather than the
+        nearest neighbours. No vectors, no text, no network.
+        """
+        if self.collection is None:
+            raise ValueError(f"source '{self.key}' is not loaded")
+        result = self.collection.get(where=where, include=["metadatas"])
+        return {record_id: self._metadata_for(record_id, metadata)
+                for record_id, metadata in zip(result["ids"], result["metadatas"])}
 
     def search(self, embedding: list[float], *, k: int = 5,
                where: dict | None = None) -> list[Hit]:
@@ -130,10 +142,14 @@ class CourseSource(KnowledgeSource):
         # As a file:// URL: FileSet.from_base_url parses what it is given, and on Windows
         # an absolute path like C:\cache\courses reads as the URL scheme "c".
         self.ctx = ContextDataset(self.root.resolve().as_uri())
+        self._text_cache: dict[str, str] = {}
 
     @property
     def course_dict(self):
         return self.ctx.course_dict
+
+    def toc_text(self, course_key: str) -> str | None:
+        return self.ctx.get_toc_text(course_key)
 
     def load(self, client) -> None:
         self._create_collection(client)
@@ -143,8 +159,17 @@ class CourseSource(KnowledgeSource):
         self._add_batched(client, ids, embeddings, metadatas)
         logger.info("source '%s': %d chunk vectors indexed", self.key, len(ids))
 
-    def text(self, record_id: str) -> str:
-        return self.ctx.get_chunk_text(record_id)
+    def text(self, record_id: str) -> str | None:
+        """A chunk's text, memoized. `None` where the mirror does not have it.
+
+        Keyed by content hash, so a cached read can never be stale.
+        """
+        text = self._text_cache.get(record_id)
+        if text is None:
+            text = self.ctx.get_chunk_text(record_id)
+            if text is not None:
+                self._text_cache[record_id] = text
+        return text
 
 
 class BundleSource(KnowledgeSource):

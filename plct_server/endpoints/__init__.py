@@ -15,7 +15,3 @@ def get_ui_router() -> APIRouter:
     router.include_router(api_router)
     return router
 
-def get_rag_router() -> APIRouter:
-    from .rag_api import router as rag_router
-    return rag_router
-

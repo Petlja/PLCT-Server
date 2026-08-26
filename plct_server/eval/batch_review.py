@@ -17,7 +17,6 @@ logger = logging.getLogger(__name__)
 
 class Conversation(BaseModel):
     history: list[tuple[str, str]]
-    condensed_history : Optional[str] = ""
     query: str
     response: str
     benchmark_response: str
@@ -40,12 +39,11 @@ class Conversation(BaseModel):
         self.query_context.system_message = convert_to_html(self.query_context.system_message)
 
 async def run_test_case(ai_engine: AiEngine, test_case: Conversation, model : str) -> Tuple[str, QueryContext]:
-    answer_generator, _ ,context = await ai_engine.generate_answer(
+    answer_generator, context = await ai_engine.generate_answer(
         history=test_case.history,
         query=test_case.query,
         course_key=test_case.course_key,
         activity_key=test_case.activity_key,
-        condensed_history = test_case.condensed_history,
         model_name= test_case.model if test_case.model else model
     )
     

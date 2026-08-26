@@ -14,6 +14,7 @@ import zstandard as zstd
 from plct_server.knowledge import build_store, resolve_sources, sync, verify
 from plct_server.knowledge.config import SourceSpec
 from plct_server.knowledge.store import KnowledgeStore, source_for
+from plct_server.knowledge.chunk_order import fuse, reconstruct
 from plct_server.knowledge.sync import _safe_rel
 
 
@@ -243,3 +244,49 @@ class ConfigTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FuseTests(unittest.TestCase):
+    """`fuse` groups chunks into the runs that actually chain.
+
+    `reconstruct` is all-or-nothing on purpose -- it rebuilds one whole activity and should
+    not guess an order it cannot verify. That is the wrong answer for a handful of chunks
+    pulled out of a big page by a query, where neighbours share ~1,524 tokens and would
+    otherwise be handed over twice.
+    """
+
+    OVERLAP = "Rekurzija je kada funkcija poziva samu sebe. " * 40
+
+    def test_a_fully_chaining_set_is_one_run_identical_to_reconstruct(self):
+        chunks = {"a": "POCETAK. " + self.OVERLAP, "b": self.OVERLAP + "KRAJ."}
+        runs = fuse(chunks)
+
+        self.assertEqual(len(runs), 1)
+        self.assertEqual(runs[0].text, reconstruct(chunks).text)
+        self.assertTrue(runs[0].ordered)
+
+    def test_an_adjacent_pair_beside_an_unrelated_chunk_fuses_only_the_pair(self):
+        chunks = {"a": "POCETAK. " + self.OVERLAP,
+                  "b": self.OVERLAP + "KRAJ.",
+                  "z": "Sasvim drugi zadatak, bez ikakvog preklapanja. " * 30}
+        runs = fuse(chunks)
+
+        texts = sorted((r.text for r in runs), key=len)
+        self.assertEqual(len(runs), 2)
+        self.assertTrue(texts[1].startswith("POCETAK."))
+        self.assertTrue(texts[1].endswith("KRAJ."))
+        # The shared overlap is carried once across the fused pair.
+        self.assertEqual(len(texts[1]),
+                         len(chunks["a"]) + len(chunks["b"]) - len(self.OVERLAP))
+        self.assertEqual(texts[0], chunks["z"])
+
+    def test_chunks_that_share_nothing_stay_separate(self):
+        chunks = {f"id{i}": f"Zadatak broj {i}. " * 30 for i in range(3)}
+        runs = fuse(chunks)
+
+        self.assertEqual(len(runs), 3)
+        self.assertEqual(sorted(r.text for r in runs), sorted(chunks.values()))
+
+    def test_a_single_chunk_and_an_empty_set(self):
+        self.assertEqual(fuse({"a": "tekst"})[0].text, "tekst")
+        self.assertEqual(fuse({})[0].text, "")

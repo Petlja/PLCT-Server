@@ -131,24 +131,6 @@ ai_ctx_url: <ai-contex path>
 
 Relative paths are considered relative to the folder of the configuration file. Supported URL schemes are `http`, `https` and `file`.
 
-## RAG API key
-
-PLCT server implements the Retrieval Augmented Generation (RAG) REST API. To enable access to the API, you need to specify an API key.
-
-### configuration file
-
-Use the `api_key` key. Example:
-
-```yaml
-api_key: 695613bb32c64842bd64aff8f8edc51951a90a183ff3b690697f0247657deb48
-```
-
-The API key in the above example is randomly generated SHA-256 hash.
-
-### environment variables
-
-Use the `PLCT_API_KEY` environment variable to set your api key.
-
 ## OpenAI API keys
 
 ### environment variables
@@ -187,15 +169,8 @@ MODEL_CONFIGS_LIST = [
         azure_deployment_name="gpt-4o-mini",
         azure_api_version="2023-03-15-preview",
         type="chat",
-        context_size=128_000
-    ),
-    ModelConfig(
-        name="gpt-4o",
-        provider=None,  # use default provider
-        azure_deployment_name="gpt-4o",
-        azure_api_version="2024-02-15-preview",
-        type="chat",
-        context_size=128_000
+        context_size=128_000,
+        encoding="o200k_base"
     ),
     ModelConfig(
         name="text-embedding-3-large",
@@ -203,10 +178,23 @@ MODEL_CONFIGS_LIST = [
         azure_deployment_name="text-embedding-3-large",
         azure_api_version="2023-05-15",
         type="embedding",
-        context_size=8_191
+        context_size=8_191,
+        encoding="cl100k_base"
     ),
+    # ...gpt-4o, gpt-5.2, text-embedding-3-small and the vLLM models follow.
 ]
 ```
+
+`encoding` names the [tiktoken](https://github.com/openai/tiktoken) encoding the model
+tokenizes with, so token counts are taken in that model's own units. The OpenAI chat models
+use `o200k_base` and the `text-embedding-3-*` models use `cl100k_base`; the difference is
+large on Cyrillic text, where `cl100k_base` runs roughly 1.7x higher, so counting one with
+the other can walk straight past a model's input limit. Leave it unset for a model tiktoken
+does not know -- the vLLM models carry their own tokenizers -- and the engine falls back to
+`o200k_base`, treating the count as an estimate.
+
+Every embedding model named by a configured knowledge source must appear in this list, or
+retrieval from that source fails when it is first queried.
 
 For example, if you already have an Azure OpenAI deployment for the gpt-4o-mini model named `my-gpt-4o-mini`, ensure that the `azure_deployment_name` and `azure_api_version` fields are correctly configured:
 

@@ -1,21 +1,4 @@
-"""Pull every configured source onto local disk, once, at startup.
-
-Neither source type offers a container listing, and neither needs one: each names its own
-files. A PLCT-AI-Ctx dataset names them through `index.json` -> each course `summary.json`
--> the embedding payload's chunk ids; an AI-Knowledge-Tools bundle names them through
-`manifest.json` -> `records.jsonl` -> each chunk record's `text_file` and `chunk_file`.
-
-Staleness is one rule for both types. `.mirror.json` records the hash of the source's entry
-file -- `index.json` or `manifest.json`. Startup re-fetches that one small file and compares:
-unchanged and complete means the mirror is trusted, changed means the mutable files are
-re-fetched. So a rebuilt dataset is picked up by a restart rather than a redeploy.
-
-Chunk ids in the course dataset are content hashes, so an existing chunk file can never be
-stale. Bundle payload paths are ordinal-based (`chunks/0001.md`), so a changed manifest
-re-fetches all of them.
-"""
-
-from __future__ import annotations
+"""Mirror every configured source onto local disk, once, at startup."""
 
 import json
 import logging

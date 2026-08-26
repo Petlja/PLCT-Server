@@ -23,7 +23,6 @@ class ChatInput(BaseModel):
     history: List[ChatHistoryItem] = []
     question: str = ""
     accessKey: str = ""
-    condensedHistory: str = "" 
     model : str = ""
     contextAttributes: dict[str,str] = {}
 
@@ -32,12 +31,8 @@ class ChatModel(BaseModel):
     display_name: str
 
 PROGRESS_MESSAGES = {
-    "classifying": "Analiziram pitanje...",
-    "embedding": "Pripremam pretragu...",
-    "retrieving": "Tražim relevantne delove sadržaja...",
     "preparing_answer": "Pripremam odgovor...",
-    "condensing_history": "Ažuriram kontekst razgovora...",
-    "generating_answer": "Generišem odgovor...",
+    "retrieving": "Tražim relevantne delove sadržaja...",
 }
 ERROR_MESSAGE = "Ima tehničkih problema sa pristupom OpenAI, malo sačekaj pa pokušaj ponovo"
 
@@ -47,41 +42,29 @@ def encode_event(event: dict[str, Any]) -> bytes:
 
 
 async def stream_response(input: ChatInput) -> AsyncGenerator[bytes, None]:
-    course_key = input.contextAttributes.get("course_key")
-    activity_key = input.contextAttributes.get("activity_key")
+    course_key = input.contextAttributes.get("course_key") or ""
+    activity_key = input.contextAttributes.get("activity_key") or ""
     history = [(item.q, item.a) for item in input.history]
     ai_engine = get_ai_engine()
     event_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue(maxsize=20)
 
-    async def publish_progress(stage: str) -> None:
+    async def publish_progress(stage: str, detail: str | None = None) -> None:
         await event_queue.put({
             "type": "progress",
             "stage": stage,
             "message": PROGRESS_MESSAGES[stage],
+            **({"detail": detail} if detail else {}),
         })
 
     async def produce_events() -> None:
         try:
-            generated_answer, followup_questions, _ = await ai_engine.generate_answer(
+            generated_answer, _ = await ai_engine.generate_answer(
                 history=history,
                 query=input.question,
                 course_key=course_key,
                 activity_key=activity_key,
-                condensed_history=input.condensedHistory,
                 model_name=input.model,
                 progress_callback=publish_progress)
-
-            await publish_progress("condensing_history")
-            new_condensed_history = await ai_engine.generate_condensed_history(
-                history=history,
-                condensed_history=input.condensedHistory)
-
-            await event_queue.put({
-                "type": "metadata",
-                "condensed_history": new_condensed_history,
-                "followup_questions": followup_questions,
-            })
-            await publish_progress("generating_answer")
 
             async for chunk in generated_answer:
                 await event_queue.put({"type": "content", "text": chunk})

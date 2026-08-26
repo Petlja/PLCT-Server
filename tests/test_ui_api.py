@@ -2,22 +2,19 @@ import json
 import unittest
 from unittest.mock import patch
 
-from plct_server.endpoints.ui_api import ChatInput, stream_response
+from plct_server.endpoints.ui_api import PROGRESS_MESSAGES, ChatInput, stream_response
 
 
 class FakeAiEngine:
     async def generate_answer(self, **kwargs):
         progress_callback = kwargs["progress_callback"]
-        await progress_callback("classifying")
-        await progress_callback("retrieving")
+        await progress_callback("preparing_answer")
+        await progress_callback("retrieving", "search_course")
 
         async def answer():
             yield "Prvi\nred"
 
-        return answer(), ["Sledeće pitanje?"], None
-
-    async def generate_condensed_history(self, **kwargs):
-        return "Sažetak"
+        return answer(), None
 
 
 class StreamResponseTests(unittest.IsolatedAsyncioTestCase):
@@ -35,10 +32,15 @@ class StreamResponseTests(unittest.IsolatedAsyncioTestCase):
         events = [json.loads(chunk) for chunk in chunks]
         self.assertEqual(
             [event["type"] for event in events],
-            ["progress", "progress", "progress", "metadata", "progress", "content", "done"],
+            ["progress", "progress", "content", "done"],
         )
-        self.assertEqual(events[3]["condensed_history"], "Sažetak")
-        self.assertEqual(events[5]["text"], "Prvi\nred")
+        self.assertEqual(events[1]["detail"], "search_course")
+        self.assertNotIn("detail", events[0])
+        self.assertEqual(events[2]["text"], "Prvi\nred")
+
+    async def test_every_published_stage_has_a_message(self):
+        """The stage set is a wire contract: publishing one that is absent raises."""
+        self.assertEqual(set(PROGRESS_MESSAGES), {"preparing_answer", "retrieving"})
 
 
 if __name__ == "__main__":

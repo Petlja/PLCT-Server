@@ -1,14 +1,8 @@
 """The knowledge layer: mirrored sources, one Chroma collection each.
 
-Startup mirrors every configured source to local disk and loads its vectors into its own
-collection. After that nothing in the request path makes an HTTP request for content.
-
     store = knowledge.init(sources=resolve_sources(conf), cache_dir=conf.knowledge_cache_dir)
     hits = store.source("courses").search(embedding, k=10, where={"course_key": ck})
-    text = hits[0].text
 """
-
-from __future__ import annotations
 
 import logging
 from pathlib import Path

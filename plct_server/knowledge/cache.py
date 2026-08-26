@@ -1,10 +1,4 @@
-"""The local mirror: one directory per source, keyed by the URL it came from.
-
-Everything the request path reads comes from here, not from the network. A source whose
-url is already a local path is used in place -- it is its own mirror.
-"""
-
-from __future__ import annotations
+"""The local mirror: one directory per source, keyed by the URL it came from."""
 
 import json
 from hashlib import sha1

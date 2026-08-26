@@ -1,13 +1,3 @@
-"""Which knowledge sources this server serves, and where they come from.
-
-A source is a named body of indexed knowledge with its own vectors: the PLCT-AI-Ctx course
-dataset is one, an AI-Knowledge-Tools bundle is another. They stay separate payloads -- two
-tables in one database -- so each declares its own embedding model and distance space and
-is queried on its own.
-"""
-
-from __future__ import annotations
-
 import re
 from typing import Literal
 

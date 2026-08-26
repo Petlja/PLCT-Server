@@ -2,18 +2,22 @@ import logging
 import tiktoken
 
 from tiktoken import Encoding
-from typing import Any, AsyncIterator, Awaitable, Callable, Coroutine, Union
-from openai import AsyncAzureOpenAI, AsyncOpenAI
-from openai.types.chat import ChatCompletion
+from typing import AsyncIterator, Awaitable, Callable, Union
+from openai import AsyncAzureOpenAI, AsyncOpenAI, omit
 
 from plct_server.ai.client import AiClientFactory
 
-from ..knowledge import COURSES_KEY, KnowledgeStore
+from ..knowledge import BundleSource, COURSES_KEY, KnowledgeStore
+from ..knowledge.course_db import CourseDB
+from .language import dominant_script
 from .model_conf import ModelConfig, ModelProvider, MODEL_CONFIGS_LIST
 from .query_context import QueryContext, QueryError
-from .structured_outputs.query_classification import TOOLS_CHOICE_DEF, TOOLS_DEF, Classification, QueryLanguage, StructuredOutputResponse, get_answer_language, parse_query_classification
-
-from .prompt_templates import *
+from .tools import (Evidence, PLATFORM_COURSE_KEY, ToolLoop, bundle_search_tool,
+                    current_page, offering, render_course_map)
+from .tools.course_tools import course_search_tool, platform_search_tool
+from .prompt_templates import (CONTEXT_SEGMENT, NO_COURSE_CONTEXT, PAGE_EXCERPT,
+                               PAGE_SUMMARY_ONLY, PAGE_WHOLE, SCOPE, SCRIPT_INSTRUCTION,
+                               SYSTEM_HEADER, SYSTEM_RULES)
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +30,7 @@ def init(*, store: KnowledgeStore, client_factory: AiClientFactory) -> None:
                              client_factory=client_factory)
     else:
         raise ValueError(f"{__name__} already initialized")
-    
+
 
 def get_ai_engine() -> "AiEngine":
     global ai_engine
@@ -34,7 +38,8 @@ def get_ai_engine() -> "AiEngine":
         raise ValueError(f"{__name__} not initialized, call {__name__}.init first")
     return ai_engine
 
-def create_message(system : str, history: list[dict[str, str]], query) -> list[dict[str, str]]:
+def create_message(system: str, history: list[tuple[str, str]],
+                   query: str) -> list[dict[str, str]]:
     messages = [{"role": "system", "content": system}]
     for item in history:
         messages.append({"role": "user", "content": item[0]})
@@ -42,30 +47,42 @@ def create_message(system : str, history: list[dict[str, str]], query) -> list[d
     messages.append({"role": "user", "content": query})
     return messages
 
-CHAT_MODEL = "gpt-4o-mini"
-EMBEDDING_MODEL = "text-embedding-3-large"
-EMBEDDING_SIZE = 1536
-PETLJA_DOCS_COURSE_KEY = "petlja-docs"
-ProgressCallback = Callable[[str], Awaitable[None]]
+CHAT_MODEL = "gpt-4o-mini"        # when the request names no model
+MAX_ANSWER_TOKENS = 2000          # reserved out of the chat model's context window
+
+FALLBACK_ENCODING = "o200k_base"
+
+ProgressCallback = Callable[[str, str | None], Awaitable[None]]
 
 
-async def report_progress(progress_callback: ProgressCallback | None, stage: str) -> None:
+async def report_progress(progress_callback: ProgressCallback | None, stage: str,
+                          detail: str | None = None) -> None:
     if progress_callback:
-        await progress_callback(stage)
+        await progress_callback(stage, detail)
 
 
 class AiEngine:
 
 
     _model_config_dict: dict[str, ModelConfig] = dict()
-    
+
     def __init__(self, *, store: KnowledgeStore, client_factory: AiClientFactory):
         self.client_factory = client_factory
         self.store = store
         self.courses = store.source(COURSES_KEY)
         self.ctx_data = self.courses.ctx
-        self.encoding : Encoding = tiktoken.encoding_for_model(EMBEDDING_MODEL)
+        self._encodings: dict[str, Encoding] = {}
+        self.fallback_encoding: Encoding = tiktoken.get_encoding(FALLBACK_ENCODING)
         self._load_model_configs()
+
+        self.course_db = CourseDB(self.courses)
+        self.bundles = [s for s in map(store.source, store.keys())
+                        if isinstance(s, BundleSource)]
+        for bundle in self.bundles:
+            logger.info("bundle '%s' (%s) is offered as %s()", bundle.key,
+                        bundle.knowledge_unit, offering(bundle).name)
+        if not self.bundles:
+            logger.info("no aikt-bundle sources loaded -- no literature tool is offered")
 
     def add_model_config(self, model_config: ModelConfig) -> None:
         if model_config.display_name is None:
@@ -100,298 +117,192 @@ class AiEngine:
             ))
             logger.info(f"Auto-added vLLM model '{model_name}' (context_size={context_size})")
 
-    
+        estimated = sorted(m.name for m in self._model_config_dict.values()
+                           if m.type == "chat" and m.encoding is None)
+        if estimated:
+            logger.info("token counts for %s are estimates taken with %s -- these models "
+                        "tokenize with their own vocabularies: %s",
+                        "these models" if len(estimated) > 1 else "this model",
+                        FALLBACK_ENCODING, ", ".join(estimated))
+
+
     def get_model_config(self, model_name: str) -> ModelConfig:
         model_config = self._model_config_dict.get(model_name)
         if not model_config:
             raise ValueError(f"Model '{model_name}' not found in configuration")
         return model_config
 
+    def _encoding_for(self, config: ModelConfig) -> Encoding:
+        name = config.encoding
+        if name is None:
+            return self.fallback_encoding
+        encoding = self._encodings.get(name)
+        if encoding is None:
+            encoding = self._encodings[name] = tiktoken.get_encoding(name)
+        return encoding
 
     def _get_async_openai_client(self, requested_model: str | None) -> Union[AsyncOpenAI, AsyncAzureOpenAI]:
         logger.debug(f"Creating AI client")
         model_config = self.get_model_config(requested_model)
         return self.client_factory.get_client(model_config)
 
-    async def _handle_query_submission(self, message: list[dict[str, str]], max_tokens: int, stream : bool,
-                                        model_name : str = None) -> Union[str, Coroutine[Any, Any, ChatCompletion]]:
-        model = model_name or CHAT_MODEL
-        client = self._get_async_openai_client(
-            requested_model = model
-        )
+    def count_tokens(self, text: str, encoding: Encoding | None = None) -> int:
+        """Tokens in `text`, measured with `encoding` -- the fallback when none is given."""
+        return len((encoding or self.fallback_encoding).encode(text))
+
+    async def _create_embedding(self, input: str, *, model: str,
+                                dimensions: int) -> list[float]:
+        """One query vector. `model` and `dimensions` are required and come from the source
+        being searched -- see `KnowledgeSource.query_embedder`."""
+        client = self._get_async_openai_client(requested_model=model)
         config = self.get_model_config(model)
-
-        def encode_message_content(message: list[dict[str, str]]) -> int:
-            total_length = 0
-            for msg in message:
-                total_length += len(self.encoding.encode(msg["content"]))
-            return total_length
-        
         token_limit = config.context_size
 
-        message_tokens = encode_message_content(message)
-        if message_tokens > token_limit - max_tokens:
+        used = self.count_tokens(input, self._encoding_for(config))
+        if used > token_limit:
             raise QueryError((
-                f"Context too large for model. Tokens used: {message_tokens}",
-                f"Response tokens: {max_tokens}",
-                f"Model token limit: {token_limit}"
-            ))
-        else:
-            logger.info(f"Tokens used in message: {message_tokens}")
-
-        completion = await client.chat.completions.create(
-            model=config.name,
-            messages=message,
-            stream=stream,
-            max_completion_tokens=max_tokens,
-            temperature=0,
-            extra_body= config.extra_body
-        )
-
-        if stream:
-            return completion
-        else:
-            return completion.choices[0].message.content
-        
-
-    async def _create_embedding(self, input: str, encoding_format: str, dimensions: int) -> list[float]:
-        client = self._get_async_openai_client(
-            requested_model= EMBEDDING_MODEL
-        )
-        config = self.get_model_config(EMBEDDING_MODEL)
-        token_limit = config.context_size
-
-        if len(self.encoding.encode(input)) > token_limit:
-            raise QueryError((
-                f"Embedding input too large for model. Tokens used: {len(self.encoding.encode(input))}",
+                f"Embedding input too large for model. Tokens used: {used}",
                 f"Model token limit: {token_limit}"))
-    
+
         response = await client.embeddings.create(
             model=config.name,
             input=input,
-            encoding_format=encoding_format,
+            encoding_format="float",
             dimensions=dimensions
         )
         return response.data[0].embedding
-    
-    def _generate_chroma_filter(self, structured_output: StructuredOutputResponse, course_key: str, activity_key: str) -> tuple[dict[str, str], int]:
-        if structured_output.classification == Classification.COURSE:
-            where = {"course_key": course_key}
-            n_results = 2
-        elif structured_output.classification == Classification.CURRENT_LECTURE:
-            where = {"$and": [{"course_key": course_key}, {"activity_key": activity_key}]}
-            n_results = 10
-        elif structured_output.classification == Classification.PLATFORM:
-            where = {"course_key": PETLJA_DOCS_COURSE_KEY}
-            n_results = 2
-        else:
-            where = {}
-            n_results = 0
-        return where, n_results
-        
-    def _get_rag_segment(self, structured_output: StructuredOutputResponse, query_embedding: list[float],
-                          course_key: str, activity_key: str) -> tuple[str, list[dict[str, str]]]:
-        
-        if structured_output.classification == Classification.UNSURE:
-            return "", []
-        
-        where, n_results = self._generate_chroma_filter(structured_output, course_key, activity_key)
 
-        hits = self.courses.search(query_embedding, k=n_results, where=where)
+    # ------------------------------------------------------------------ the prompt
 
-        chunk_strs : list[str, str] = []
-        chunk_metadata : list[dict[str, str]] = []
-
-        for hit in hits:
-            hit.metadata["distance"] = str(hit.distance)
-            chunk_metadata.append(hit.metadata)
-            chunk_strs.append(hit.text)
-
-
-        logger.debug(f"chunk_metadata: {chunk_metadata}")
-
-        rag_segment = system_message_rag_template.format(
-            chunks='\n\n'.join(chunk_strs)
-        )
-
-        return rag_segment, chunk_metadata
-
-    async def preprocess_query(self,query: str, history: list[dict[str, str]], course_key: str, 
-                               activity_key: str, condensed_history: str, model_name : str = None) -> StructuredOutputResponse:
-        
-        model = model_name or CHAT_MODEL
-        client = self._get_async_openai_client(
-            requested_model = model
-        )
-        config = self.get_model_config(model)
-
-        course_summary, lesson_summary = self.ctx_data.get_summary_texts(
+    async def _context_segment(self, query: str, course_key: str, activity_key: str,
+                               evidence: Evidence) -> str:
+        """Course summary, course map, and the page the teacher is on -- as text."""
+        course_summary, activity_summary = self.ctx_data.get_summary_texts(
             course_key, activity_key)
-        
-        if condensed_history:
-            system_message = preprocess_system_message_template_with_history.format(
-                course_summary=course_summary,
-                lesson_summary=lesson_summary,
-                condensed_history = condensed_history
-            )    
+        if not course_summary:
+            return NO_COURSE_CONTEXT
+
+        course_map = render_course_map(self.course_db, course_key,
+                                       current=activity_key)
+
+        page = await current_page(
+            course_key=course_key, activity_key=activity_key, query=query,
+            source=self.courses, db=self.course_db,
+            embed=self.courses.query_embedder(self._create_embedding),
+            evidence=evidence)
+        summary = activity_summary or "(no summary for this page)"
+        if page is None:
+            page_segment = PAGE_SUMMARY_ONLY.format(summary=summary)
+        elif page.whole:
+            page_segment = PAGE_WHOLE.format(text=page.text)
         else:
-          system_message = preprocess_system_message_template.format(
-                course_summary=course_summary,
-                lesson_summary=lesson_summary,
-            ) 
+            page_segment = PAGE_EXCERPT.format(total=page.total, used=page.used,
+                                               summary=summary, text=page.text)
+        return CONTEXT_SEGMENT.format(course_summary=course_summary,
+                                      course_map=course_map, page=page_segment)
 
-        messages = create_message(system_message, history, query)  
-        tools = TOOLS_DEF
-        tools_choice = TOOLS_CHOICE_DEF
-        response = await client.chat.completions.create(
-            model=config.name,
-            messages= messages,
-            max_tokens= 1000,
-            tools=tools,
-            tool_choice = tools_choice
-        )
-        return parse_query_classification(response , query)
-    
-    
-    async def make_system_message(self, history: list[tuple[str,str]], query: str,
-                                   course_key: str, activity_key: str, condensed_history: str,
-                                   query_context: QueryContext = None,
-                                   progress_callback: ProgressCallback | None = None) -> tuple[str, list[str]]:
-            
-        if condensed_history:
-            condensed_history_segment = system_message_condensed_history_template.format(condensed_history=condensed_history)
-            history = [history.pop()]
-        else:
-            condensed_history_segment = ""
-
-        await report_progress(progress_callback, "classifying")
-        structured_output = await self.preprocess_query(
-            query=query,
-            history=history,
-            course_key=course_key,
-            activity_key=activity_key,
-            condensed_history=condensed_history
-        )
-
-        logger.debug(f"structured_output: {structured_output}")
-
-        await report_progress(progress_callback, "embedding")
-        query_embedding = await self._create_embedding(
-            input=structured_output.restated_question  or query,
-            encoding_format="float",
-            dimensions=EMBEDDING_SIZE
-        )
-
-        await report_progress(progress_callback, "retrieving")
-        rag_segment, chunk_metadata = self._get_rag_segment(
-            structured_output=structured_output,
-            query_embedding=query_embedding,
-            course_key=course_key,
-            activity_key=activity_key
-        )
-
-        course_summary, lesson_summary = self.ctx_data.get_summary_texts(course_key, activity_key)
-        course_toc = self.ctx_data.get_toc_text(course_key)
-
-        if structured_output.classification == Classification.COURSE:
-            summary_segment = system_message_summary_template_course.format(
-                course_summary=course_summary,
-                toc = course_toc
-            )         
-        if structured_output.classification == Classification.CURRENT_LECTURE:
-            summary_segment =  system_message_summary_template_lesson.format(
-                lesson_summary=lesson_summary
-            )
-
-        if structured_output.classification == Classification.PLATFORM:
-            summary_segment = system_message_summary_template_platform
-        
-        if structured_output.classification == Classification.UNSURE:
-            summary_segment =  system_message_summary_template_unsure.format(
-                course_summary=course_summary,
-                lesson_summary=lesson_summary
-            )
-        system_message = system_message_template.format(answer_language = get_answer_language(structured_output)) + summary_segment + condensed_history_segment + rag_segment
-
+    async def make_system_message(self, query: str, course_key: str, activity_key: str,
+                                  evidence: Evidence,
+                                  query_context: QueryContext | None = None,
+                                  encoding: Encoding | None = None) -> str:
+        context = await self._context_segment(query, course_key, activity_key, evidence)
+        rules = SYSTEM_RULES.format(
+            script_instruction=SCRIPT_INSTRUCTION.format(script=dominant_script(query)),
+            scope=SCOPE)
         if query_context:
             query_context.add_system_message_parts(
-                [
-                    {"name": "system_message_template", "message": system_message_template},
-                    {"name": "summary_segment", "message": summary_segment},
-                    {"name": "condensed_segment", "message": condensed_history_segment},
-                    {"name": "rag_segment", "message": rag_segment}
-                ],
-                self.encoding
-            )
-            query_context.set_chunk_metadata(chunk_metadata)
+                [{"name": "header", "message": SYSTEM_HEADER},
+                 {"name": "context", "message": context},
+                 {"name": "rules", "message": rules}],
+                encoding or self.fallback_encoding)
+        return SYSTEM_HEADER + "\n" + context + "\n" + rules
 
-        return system_message, structured_output.followup_questions
+    # ------------------------------------------------------------------ the tools
+
+    def _build_tools(self, course_key: str, activity_key: str,
+                     evidence: Evidence) -> list:
+        tools = []
+        if course_key and course_key in self.ctx_data.course_dict:
+            tools.append(course_search_tool(
+                course_key=course_key, activity_key=activity_key,
+                source=self.courses, db=self.course_db,
+                embed=self.courses.query_embedder(self._create_embedding),
+                evidence=evidence))
+        for bundle in self.bundles:
+            tools.append(bundle_search_tool(
+                source=bundle, embed=bundle.query_embedder(self._create_embedding),
+                evidence=evidence))
+        if PLATFORM_COURSE_KEY in self.ctx_data.course_dict:
+            tools.append(platform_search_tool(
+                source=self.courses, db=self.course_db,
+                embed=self.courses.query_embedder(self._create_embedding),
+                evidence=evidence))
+        return tools
+
+    # ------------------------------------------------------------------ answering
 
     async def generate_answer(self,*, history: list[tuple[str,str]], query: str,
-                            course_key: str, activity_key: str, condensed_history: str, model_name,
-                            progress_callback: ProgressCallback | None = None) -> tuple[AsyncIterator[str], list[str], QueryContext]:
+                            course_key: str, activity_key: str, model_name,
+                            progress_callback: ProgressCallback | None = None
+                            ) -> tuple[AsyncIterator[str], QueryContext]:
         query_context = QueryContext()
+        model = model_name or CHAT_MODEL
+        config = self.get_model_config(model)
+        client = self._get_async_openai_client(requested_model=model)
 
-        if condensed_history:
-            history = [history.pop()]
-            
-        system_message, followup_questions = await self.make_system_message(
-            history, query, course_key, activity_key, condensed_history, query_context,
-            progress_callback)
-        
+        encoding = self._encoding_for(config)
+
+        def count(text: str) -> int:
+            return self.count_tokens(text, encoding)
+
+        evidence = Evidence(count_tokens=count)
+        system_message = await self.make_system_message(query, course_key, activity_key,
+                                                        evidence, query_context, encoding)
         messages = create_message(system_message, history, query)
-
         for item in history:
-            query_context.add_encoding_length("history", item[0] + item[1], self.encoding) 
-        query_context.add_encoding_length("user_query", query, self.encoding)
+            query_context.add_encoding_length("history", item[0] + item[1], encoding)
+        query_context.add_encoding_length("user_query", query, encoding)
+
+        tools = (self._build_tools(course_key, activity_key, evidence)
+                 if config.supports_tools else [])
+        if not config.supports_tools:
+            logger.info("model '%s' is configured without tool support -- answering in one "
+                        "turn from the page and course map alone", config.name)
+
+        async def complete(*, messages, tools, stream):
+            used = sum(count(m.get("content") or "") for m in messages)
+            if used > config.context_size - MAX_ANSWER_TOKENS:
+                raise QueryError((
+                    f"Context too large for model. Tokens used: {used}",
+                    f"Response tokens: {MAX_ANSWER_TOKENS}",
+                    f"Model token limit: {config.context_size}"))
+            logger.info("turn: %d token(s) in, tools %s", used, "on" if tools else "off")
+            return await client.chat.completions.create(
+                model=config.name,
+                messages=messages,
+                stream=stream,
+                max_completion_tokens=MAX_ANSWER_TOKENS,
+                temperature=0,
+                # `omit` drops the field entirely; `None` would send "tools": null,
+                # which the vLLM servers reject.
+                tools=tools if tools else omit,
+                extra_body=config.extra_body)
+
+        async def on_round(calls) -> None:
+            await report_progress(progress_callback, "retrieving",
+                                  ", ".join(c["name"] for c in calls))
+
+        loop = ToolLoop(complete=complete, tools=tools, on_round=on_round)
+
+        async def answer_generator():
+            async for delta in loop.stream(messages):
+                yield delta
+            for label, payload in loop.result.transcript:
+                query_context.add_system_message_parts(
+                    [{"name": f"tool: {label}", "message": payload}], encoding)
+            query_context.set_chunk_metadata(evidence.provenance)
+            logger.info("answered in %d tool round(s), %d call(s); evidence: %s",
+                        loop.result.rounds, loop.result.calls, evidence.summary())
 
         await report_progress(progress_callback, "preparing_answer")
-        response = await self._handle_query_submission(
-            message= messages,
-            max_tokens= 2000, 
-            stream=True,
-            model_name=model_name)
-    
-        async def answer_generator():
-            async for chunk in response:
-                if len(chunk.choices) > 0:
-                    delta = chunk.choices[0].delta
-                    if delta.content:
-                        yield delta.content
-
-        return answer_generator(), followup_questions, query_context
-    
-    async def generate_condensed_history(self, history: list[tuple[str,str]],
-                                          condensed_history: str) -> str:
-        if len(history) < 2:
-            return ""
-        
-        if condensed_history:
-            latest_user_question, latest_assistant_explanation = history.pop()
-            message = condensed_history_template.format(
-                condensed_history=condensed_history,
-                latest_user_question=latest_user_question,
-                latest_assistant_explanation=latest_assistant_explanation
-            )
-        else:
-            previous_user_question_2, previous_assistant_explanation_2 = history.pop()
-            previous_user_question_1, previous_assistant_explanation_1 = history.pop()
-            message = new_condensed_history_template.format(
-                previous_user_question_1=previous_user_question_1,
-                previous_assistant_explanation_1=previous_assistant_explanation_1,
-                previous_user_question_2=previous_user_question_2,
-                previous_assistant_explanation_2=previous_assistant_explanation_2
-            )
-
-        messages = create_message(
-            system= condensed_history_system,
-            history=[],
-            query=message)
-
-        response = await self._handle_query_submission(
-            message=messages, 
-            max_tokens= 1000, 
-            stream=False)
-        logger.debug(f"condensed_history: {response}")
-
-        return response
+        return answer_generator(), query_context

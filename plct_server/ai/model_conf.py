@@ -16,6 +16,8 @@ class ModelConfig(BaseModel):
     extra_body : dict = {}
     provider : ModelProvider | None = None  # use default provider if None
     order: int = 0  # for sorting models in the UI
+    encoding: str | None = None
+    supports_tools: bool = True
 
 MODEL_CONFIGS_LIST = [
     ModelConfig(
@@ -24,7 +26,8 @@ MODEL_CONFIGS_LIST = [
         azure_deployment_name="gpt-4o-mini",
         azure_api_version="2023-03-15-preview",
         type = "chat",
-        context_size=128_000
+        context_size=128_000,
+        encoding="o200k_base"
     ),
     ModelConfig(
         name="gpt-4o",
@@ -32,7 +35,8 @@ MODEL_CONFIGS_LIST = [
         azure_deployment_name="gpt-4o",
         azure_api_version="2024-02-15-preview",
         type = "chat",
-        context_size=128_000
+        context_size=128_000,
+        encoding="o200k_base"
     ),
     ModelConfig(
         name="text-embedding-3-large",
@@ -40,7 +44,8 @@ MODEL_CONFIGS_LIST = [
         azure_deployment_name="text-embedding-3-large",
         azure_api_version="2023-05-15",
         type = "embedding",
-        context_size=8_191
+        context_size=8_191,
+        encoding="cl100k_base"
     ),
     ModelConfig(
         name="text-embedding-3-small",
@@ -48,13 +53,15 @@ MODEL_CONFIGS_LIST = [
         azure_deployment_name="text-embedding-3-small",
         azure_api_version="2023-05-15",
         type = "embedding",
-        context_size=8_191
+        context_size=8_191,
+        encoding="cl100k_base"
     ),
     ModelConfig(
         name="gpt-5.2",
         provider = ModelProvider.OPENAI,
         type = "chat",
-        context_size=128_000
+        context_size=128_000,
+        encoding="o200k_base"
     ),
     ModelConfig(
         name="meta-llama/Llama-3.1-70B-Instruct",

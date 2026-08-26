@@ -35,7 +35,6 @@ export function Chat() {
     const [progressMessage, setProgressMessage] = useState("");
     const [auth, setAuth] = useState("pending");
     const [history, setHistory] = useState<{ q: string; a: string }[]>([]);
-    const [condensedHistory, setCondensedHistory] = useState<string>("");
     const context = useContext(AppContext);
     const [searchParams] = useSearchParams();
     const [courseKey, setCourseKey] = useState<string>("-");
@@ -105,7 +104,6 @@ export function Chat() {
             localStorage.setItem('plct_activityKey', activitiyKey);
             setMessages([welcomeMessage])
             setHistory([])
-            setCondensedHistory("")
             setQuestions(defaultQuestions)
         }
     }, [activitiyKey]);
@@ -119,7 +117,6 @@ export function Chat() {
             "history": withHistory ? history : [],
             "question": question,
             "accessKey": context?.accessKey ?? "default",
-            "condensedHistory": condensedHistory,
             "contextAttributes": {"activity_key": activitiyKey, "course_key": courseKey},
             "model": model
         };
@@ -160,11 +157,6 @@ export function Chat() {
                     case "progress":
                         setProgressMessage(event.message);
                         break;
-                    case "metadata":
-                        if (event.condensed_history)
-                            setCondensedHistory(event.condensed_history);
-                        setQuestions(event.followup_questions ?? []);
-                        break;
                     case "content": {
                         setProgressMessage("");
                         answerText += event.text;
@@ -182,6 +174,7 @@ export function Chat() {
                         throw new Error(event.message);
                     case "done":
                         setProgressMessage("");
+                        setQuestions(defaultQuestions);
                         break;
                 }
             });

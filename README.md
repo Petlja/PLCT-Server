@@ -8,6 +8,8 @@ PLCT content is basically static HTML5, but some features of PLCT components may
 
 > **New here?** See the [Getting Started](doc/getting_started.md) guide for a complete, step-by-step walkthrough — from creating a deployment project to serving courses with an AI Assistant.
 
+> **Working on the internals?** [doc/ai_flow.md](doc/ai_flow.md) describes the runtime and the query path; [doc/plct_ai_ctx_relations.md](doc/plct_ai_ctx_relations.md) and [doc/ai_knowledge_tools_relations.md](doc/ai_knowledge_tools_relations.md) describe what the two upstream repositories hand this one.
+
 ## Prerequisites
 
 - Python 3.10+
@@ -93,7 +95,7 @@ Ways to run localy from command line:
 Read [PLCT Server configuration](doc/config.md) for more details on command line options.
 
 PLCT Server can be [deployed as a FastAPI app](https://fastapi.tiangolo.com/deployment/), or more generally, as a Python ASGI web application that is supported by most web servers and PaaS providers:
-- Use an ASGI web server like Uvicorn to run `plct_server.ui_main:app` or `plct_server.rag_main:app`
+- Use an ASGI web server like Uvicorn to run `plct_server.ui_main:app`
 
 - embed the PLCT Server into your FastAPI app (source of the `plct_server.main` module may be a starting point)
 
