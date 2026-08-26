@@ -51,6 +51,21 @@ other way around. AIKT has no dependency in either direction; only its artifacts
 | ASGI `plct_server.ui_main:app` | [ui_main.py](../plct_server/ui_main.py) | UI |
 | `plct-batch-review` CLI | [cli_main.py:50](../plct_server/cli_main.py#L50) | none — offline eval |
 
+Both HTTP entry points wrap the app in [`UiGate`](../plct_server/endpoints/auth.py), and
+`/api/chat` carries a [`require_auth`](../plct_server/endpoints/auth.py) dependency. Together
+they give three configurations, selected entirely by which of `api_key` and `ui_password` are
+set:
+
+| `api_key` | `ui_password` | Result |
+| --- | --- | --- |
+| unset | unset | everything open — a local `plct-serve` |
+| set | unset | content and the rest of the API open, `/api/chat` needs `X-Auth-Key` — production |
+| set | set | every path needs HTTP Basic, and `X-Auth-Key` satisfies both checks — the tester deployment |
+
+`UiGate` is plain ASGI rather than `BaseHTTPMiddleware`, because `/api/chat` streams for the
+length of an answer and `BaseHTTPMiddleware` relays a streaming response through an extra task
+and queue. It either refuses a request or steps out of the way.
+
 All of them funnel through one umbrella call, [`content.server.configure()`](../plct_server/content/server.py#L197):
 
 ```
@@ -76,7 +91,8 @@ Full reference in [config.md](config.md).
 | `course_paths` | PLCT project folders to serve |
 | `ai_ctx_url` | The PLCT-AI-Ctx dataset — **local path or HTTP base URL** |
 | `knowledge_sources`, `knowledge_cache_dir` | Every indexed body of knowledge, and where it is mirrored |
-| `api_key` | Retired with `/api/rag-system-message`; still accepted so deployed config files keep loading, and warned about at startup |
+| `api_key` | Shared secret for `/api/chat`, sent as `X-Auth-Key` — the credential that protected the retired `/api/rag-system-message` |
+| `ui_password` | Temporary HTTP Basic password over every path, for testing the SPA on a public address |
 | `azure_default_ai_endpoint`, `vllm_url` | Provider endpoints |
 | `verbose` | Log level |
 
@@ -349,5 +365,5 @@ rather than a single pre-baked string.
    embedding model and corpus; a shared threshold is a mis-calibration for at least one of them.
 7. **`ConfigOptions` forbids extra keys, and a config that fails to validate is logged and
    replaced by defaults rather than raised.** Removing a config field therefore silently
-   unconfigures every deployed server still carrying it — which is why `api_key` outlived
-   the endpoint it belonged to.
+   unconfigures every deployed server still carrying it. `api_key` outlived the endpoint it
+   belonged to for that reason, and now guards `/api/chat` in its place.

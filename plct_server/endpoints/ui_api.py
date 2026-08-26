@@ -2,13 +2,14 @@ import asyncio
 import logging
 import json
 from typing import Any, AsyncGenerator, List
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Depends, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from openai import OpenAIError
 
 from ..content.server import get_server_content
 from ..ai.engine import get_ai_engine, QueryError
+from .auth import require_auth
 
 logger = logging.getLogger(__name__)
 
@@ -104,11 +105,12 @@ async def get_models() -> List[ChatModel]:
     result = [ChatModel(name=model.name, display_name=model.display_name) for model in chat_models]
     return result
 
-@router.get("/api/chat")
+@router.get("/api/chat", dependencies=[Depends(require_auth)])
 async def get_chat() -> Response:
+    """The SPA's readiness probe: 200 once the caller may actually ask a question."""
     return Response(status_code=200)
 
-@router.post("/api/chat")
+@router.post("/api/chat", dependencies=[Depends(require_auth)])
 async def post_question(input: ChatInput) -> Response:
     logger.debug(f"Chat input: {input}")
     logger.debug(f"Context attributes: {input.contextAttributes}")

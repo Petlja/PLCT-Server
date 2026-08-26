@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from uuid import uuid4
 from .eval.batch_review import batch_prompt_conversations, generate_html_report, CONVERSATION_DIR
 from .endpoints import get_ui_router
+from .endpoints.auth import UiGate
 from .content import server
 from .knowledge.config import COURSES_KEY, SourceSpec
 
@@ -47,6 +48,7 @@ def serve(folders: tuple[str], config : str, host: str, port: int, verbose:bool,
         azure_default_ai_endpoint=azure_ai_endpoint)
     
     app = FastAPI()
+    app.add_middleware(UiGate)
     app.include_router(get_ui_router())
 
     uvicorn.run(app, host=host, port=port) 

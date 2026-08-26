@@ -281,7 +281,8 @@ For a full reference of all configuration options, see [PLCT Server Configuratio
 | `course_paths` | List of paths to PLCT course projects to serve |
 | `content_url` | Base URL for `course_paths` (paths become relative to it) |
 | `ai_ctx_url` | Path or URL to the AI context dataset |
-| `api_key` | API key for RAG REST API access |
+| `api_key` | Shared secret required on `/api/chat`, sent as the `X-Auth-Key` header |
+| `ui_password` | HTTP Basic password gating the whole site (unset = no gate) |
 | `azure_default_ai_endpoint` | Azure OpenAI Service endpoint |
 | `vllm_url` | vLLM server URL for local model serving |
 
@@ -411,7 +412,8 @@ My-PLCT-Deployment/
 | `CHATAI_OPENAI_API_KEY` | OpenAI API key |
 | `CHATAI_AZURE_API_KEY` | Azure OpenAI Service API key |
 | `CHATAI_VLLM_API_KEY` | vLLM server API key |
-| `PLCT_API_KEY` | API key for RAG REST API access |
+| `PLCT_API_KEY` | Shared secret required on `/api/chat`, sent as `X-Auth-Key` |
+| `PLCT_UI_PASSWORD` | HTTP Basic password gating the whole site (unset = no gate) |
 
 ## Troubleshooting
 

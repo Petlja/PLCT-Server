@@ -51,9 +51,13 @@ class ConfigOptions(BaseSettings):
     azure_default_ai_endpoint: str | None = None
     vllm_url: str | None = None
 
-    # Retired, but still accepted: this model forbids extra keys, so dropping the field
-    # would make every deployed config carrying it fall back to defaults.
+    # Shared secret for machine callers, sent as the `X-Auth-Key` header. It protected the
+    # retired `/api/rag-system-message` and now protects `/api/chat`, which replaced it.
     api_key: str | None = None
+
+    # Temporary HTTP Basic password over every path, for testing the bundled SPA with a
+    # small group. Unset means no gate, which is the normal deployment.
+    ui_password: str | None = None
 
 class ServerContent:
 
@@ -173,8 +177,15 @@ def load_config(*, course_urls: tuple[str] = None, config_file: str = None, verb
         level = logging.DEBUG if conf.verbose else logging.INFO
         logging.getLogger().setLevel(level)
     if conf.api_key:
-        logger.warning("'api_key' is set but no longer used: /api/rag-system-message is "
-                       "gone and /api/chat is unauthenticated. Remove it from the config.")
+        logger.info("'/api/chat' requires the 'X-Auth-Key' header")
+        if not conf.ui_password:
+            logger.info("a browser cannot send that header, so the bundled SPA will report "
+                        "no access: set 'ui_password' to let testers in, or drop 'api_key' "
+                        "to leave the endpoint open")
+    else:
+        logger.warning("'api_key' is not set: '/api/chat' is open to anyone who can reach it")
+    if conf.ui_password:
+        logger.info("HTTP Basic gate is on: every path needs 'ui_password'")
     logger.debug(f"ConfigOptions: {conf}")
     return conf
 

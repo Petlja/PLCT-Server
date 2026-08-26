@@ -133,7 +133,8 @@ course_paths:                       # list of PLCT project paths
   - intro_to_prog
   - databases
 ai_ctx_url: ai-context              # AI context dataset path or URL
-api_key: <your-api-key>             # API key for RAG REST API access
+api_key: <your-api-key>             # shared secret required on /api/chat
+ui_password: <passphrase>           # temporary HTTP Basic gate over the whole site
 azure_default_ai_endpoint: https://my-endpoint.openai.azure.com/
 vllm_url: http://localhost:8000/v1  # vLLM server URL
 ```
@@ -146,7 +147,8 @@ vllm_url: http://localhost:8000/v1  # vLLM server URL
 | `CHATAI_OPENAI_API_KEY` | OpenAI API key |
 | `CHATAI_AZURE_API_KEY` | Azure OpenAI Service API key |
 | `CHATAI_VLLM_API_KEY` | vLLM server API key |
-| `PLCT_API_KEY` | API key for RAG REST API access |
+| `PLCT_API_KEY` | Shared secret required on `/api/chat`, sent as `X-Auth-Key` |
+| `PLCT_UI_PASSWORD` | HTTP Basic password gating the whole site (unset = no gate) |
 
 ## Setting up development environment
 

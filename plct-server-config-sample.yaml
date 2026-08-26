@@ -1,9 +1,6 @@
 verbose: false
 course_project_dirs: []
 
-# Every body of indexed knowledge the server retrieves from. Each is mirrored to
-# knowledge_cache_dir at startup and indexed into its own collection. `url` is an
-# http(s) base or a local path.
 knowledge_sources:
   - key: courses
     type: plct-ai-ctx

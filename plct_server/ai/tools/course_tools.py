@@ -43,6 +43,13 @@ class Limits:
     k: int = 6                          # hits per question, course-wide
     here_k: int = 4                     # ...and from the page the teacher is on
     max_activities: int = 5             # activities delivered per call, closest first
+    # Cosine distance under text-embedding-3-large over the course corpus, where answers
+    # land under ~0.42 and noise from ~0.47. The bundle layer embeds with -3-small, so its
+    # scale is a different population and neither cutoff transfers. Past this a hit is not
+    # returned at all: without it no question can fail, and the nearest unrelated page is
+    # charged to the evidence budget ahead of one that could have been answered. The log
+    # marks what was refused, to recalibrate on.
+    max_distance: float = 0.45
     whole_page_max_tokens: int = chunks_to_tokens(8)
 
 

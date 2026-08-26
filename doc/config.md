@@ -131,6 +131,49 @@ ai_ctx_url: <ai-contex path>
 
 Relative paths are considered relative to the folder of the configuration file. Supported URL schemes are `http`, `https` and `file`.
 
+## Access control
+
+Two credentials guard the server, because the two callers are not alike. Set neither and the
+whole server is open, which is what a local `plct-serve` wants.
+
+### `api_key` -- the chat endpoint
+
+`/api/chat` is what the Petlja platform calls, and it is the endpoint that costs money to
+answer. Set `api_key` and every request to it must carry that value in the `X-Auth-Key`
+header; leave it unset and the endpoint answers anyone who can reach it.
+
+```yaml
+api_key: 695613bb32c64842bd64aff8f8edc51951a90a183ff3b690697f0247657deb48
+```
+
+The key above is a randomly generated SHA-256 hash. Use the `PLCT_API_KEY` environment
+variable to set it instead -- on a PaaS host that is the only sensible place for it.
+
+This is the same key and the same header that protected the retired
+`/api/rag-system-message`, so an existing caller keeps working by pointing at the new path.
+
+### `ui_password` -- the whole site, temporarily
+
+A browser cannot hold a shared secret: anything the SPA is given, whoever loads the page can
+read back out of it. So the bundled UI gets its own credential -- an HTTP Basic password over
+**every** path, meant for showing the SPA to a few testers on a public address and then being
+switched off.
+
+```yaml
+ui_password: some-passphrase-you-can-send-in-a-message
+```
+
+Or the `PLCT_UI_PASSWORD` environment variable. While it is set, a browser is prompted once
+and caches the answer for the session; any user name is accepted, since there is a single
+shared password and no name to look up. Requests carrying a valid `X-Auth-Key` are never
+prompted, so the platform integration is unaffected either way.
+
+Send it over HTTPS only. Basic credentials are base64, not encrypted, and are attached to
+every subsequent request.
+
+Unset it to remove the gate. `api_key` keeps protecting `/api/chat` on its own, which is the
+normal production shape: static content and the API surface open, the chat endpoint closed.
+
 ## OpenAI API keys
 
 ### environment variables
