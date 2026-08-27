@@ -8,7 +8,11 @@ call.
 
 import unittest
 
+import tiktoken
+
+from plct_server.ai.engine import AiEngine
 from plct_server.ai.language import CYRILLIC, LATIN, dominant_script
+from plct_server.ai.prompt_templates import SYSTEM_HEADER
 from plct_server.ai.tools import course_tools, knowledge_tools, page_context
 from plct_server.ai.tools.evidence import Evidence
 from plct_server.ai.tools.loop import ToolLoop
@@ -100,12 +104,76 @@ class EvidenceTests(unittest.TestCase):
 
         self.assertFalse(evidence.holds("b"))
 
+    def test_one_refusal_does_not_report_the_whole_budget_as_spent(self):
+        """`exhausted` is read off what is unspent, not latched by the first refusal.
+
+        The pages large enough to be refused are exactly the ones that used to trip it, so
+        a latch told the model to stop searching with most of the budget still free.
+        """
+        evidence = Evidence(max_tokens=20_000, count_tokens=lambda t: len(t))
+        evidence.deliver("a", "x" * 1_000)
+        refused = evidence.deliver("b", "y" * 19_500)
+
+        self.assertEqual(refused["status"], "budget_exhausted")
+        self.assertFalse(evidence.exhausted)
+        self.assertIn("text", evidence.deliver("c", "z" * 1_000))
+
+    def test_the_budget_reports_itself_spent_before_a_wasted_round(self):
+        """True below one course chunk, whether or not anything has been refused yet."""
+        evidence = Evidence(max_tokens=4_000, count_tokens=lambda t: len(t))
+        self.assertFalse(evidence.exhausted)
+
+        evidence.deliver("a", "x" * 2_000)
+
+        self.assertTrue(evidence.exhausted)
+
     def test_provenance_records_only_what_actually_went_out(self):
         evidence = Evidence(max_tokens=5, count_tokens=lambda t: len(t))
         evidence.deliver("a", "x" * 500, record={"activity_key": "act-1"})
         evidence.deliver("b", "y" * 500, record={"activity_key": "act-2"})
 
         self.assertEqual(evidence.provenance, [{"activity_key": "act-1"}])
+
+
+class SystemMessageTests(unittest.IsolatedAsyncioTestCase):
+    """The prompt hands the page back out beside its text.
+
+    `_build_tools` decides from `PageContext.whole` whether `search_current_page` exists at
+    all, so the page has to survive the trip. Nothing else covers this: the endpoint tests
+    stand the whole engine in, and a bare string returned here does not fail where it is
+    made -- it unpacks into characters at the call site, one request later.
+    """
+
+    class _Engine:
+        """`make_system_message` reaches for exactly these two things."""
+
+        fallback_encoding = tiktoken.get_encoding("o200k_base")
+
+        def __init__(self, page):
+            self.page = page
+
+        async def _context_segment(self, query, course_key, activity_key, evidence):
+            return "kontekst kursa", self.page
+
+    async def _message(self, page):
+        return await AiEngine.make_system_message(
+            self._Engine(page), "Sta je rekurzija?", "c", "a",
+            Evidence(count_tokens=len))
+
+    async def test_the_page_comes_back_beside_the_message(self):
+        page = page_context.PageContext(text="deo", whole=False, used=3, total=20)
+
+        message, returned = await self._message(page)
+
+        self.assertIs(returned, page)
+        self.assertTrue(message.startswith(SYSTEM_HEADER))
+        self.assertIn("kontekst kursa", message)
+
+    async def test_a_course_with_no_page_still_returns_the_pair(self):
+        message, returned = await self._message(None)
+
+        self.assertIsNone(returned)
+        self.assertIn("kontekst kursa", message)
 
 
 class ToolLoopTests(unittest.IsolatedAsyncioTestCase):
@@ -249,14 +317,26 @@ class Hit:
 
 
 class FakeCourseSource:
-    """Returns the hits it was given. `here_hits` answers the activity-filtered pass."""
+    """Returns the hits it was given, honouring the two activity filters it may be sent.
+
+    `here_hits` answers a search pinned to one activity -- `current_page` and the
+    `search_current_page` tool, which are the two things that ask for one page by name.
+    `hits` answers a course-wide one, minus any activity it was told to exclude -- applied
+    here rather than assumed, so a test of the exclusion tests something.
+    """
 
     def __init__(self, hits):
         self.hits = hits
         self.here_hits = []
 
     def search(self, embedding, *, k, where):
-        return (self.here_hits if "$and" in where else self.hits)[:k]
+        clauses = where.get("$and", [where])
+        if any(isinstance(c.get("activity_key"), str) for c in clauses):
+            return self.here_hits[:k]
+        excluded = {c["activity_key"]["$ne"] for c in clauses
+                    if isinstance(c.get("activity_key"), dict)}
+        return [h for h in self.hits
+                if h.metadata["activity_key"] not in excluded][:k]
 
 
 class FakeCourseDB:
@@ -292,7 +372,8 @@ class CourseSearchToolTests(unittest.IsolatedAsyncioTestCase):
     async def _embed(text):
         return [0.0]
 
-    def _tool(self, chunks, *, activity_key="", **limits):
+    def _tool(self, chunks, *, exclude_activity="", only_activity="", evidence=None,
+              **limits):
         """`chunks` is {activity_key: {chunk_id: text}}; every chunk is a hit, in order."""
         hits = [Hit(chunk_id, 0.30 + n / 100, activity_key)
                 for n, (activity_key, activity) in enumerate(chunks.items())
@@ -301,8 +382,9 @@ class CourseSearchToolTests(unittest.IsolatedAsyncioTestCase):
         return course_tools.CourseSearchTool(
             name="search_course", description="d", course_key="c",
             source=FakeCourseSource(hits), db=FakeCourseDB(chunks),
-            embed=self._embed, evidence=Evidence(count_tokens=len),
-            activity_key=activity_key, limits=course_tools.Limits(**limits))
+            embed=self._embed, evidence=evidence or Evidence(count_tokens=len),
+            exclude_activity=exclude_activity, only_activity=only_activity,
+            limits=course_tools.Limits(**limits))
 
     async def test_only_the_closest_activities_are_delivered_and_the_rest_are_named(self):
         """A hit delivers a whole page, so an uncapped call would spend the budget."""
@@ -364,33 +446,47 @@ class CourseSearchToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(second["excerpt"])
         self.assertNotIn("cetvrti", second["text"])
 
-    async def test_the_page_the_teacher_is_on_is_searched_and_never_dropped(self):
-        """A big current page loses course-wide top-k, so it gets its own pass and a slot."""
-        pages = {f"act-{i}": {f"id{i}": f"lekcija {i}"} for i in range(5)}
-        pages["here"] = {f"h{i}": f"zadatak {i}" for i in range(20)}
-        tool = self._tool(pages, activity_key="here", max_activities=2)
-        tool.source.hits = [Hit(f"id{i}", 0.30 + i / 100, f"act-{i}") for i in range(5)]
-        tool.source.here_hits = [Hit("h7", 0.90, "here"), Hit("h12", 0.91, "here")]
-
-        result = await tool.run({"questions": ["Tehnika dva pokazivaca"]})
-
-        first = result["passages"][0]
-        self.assertEqual(first["text"], "zadatak 7")
-        self.assertTrue(first["excerpt"])
-        # Pinned first despite being the worst match, and only the matched tasks come back.
-        self.assertNotIn("zadatak 0", [p.get("text") for p in result["passages"]])
-
-    async def test_a_short_current_page_still_arrives_whole(self):
-        """The extra pass must not turn an ordinary lesson into an excerpt."""
-        tool = self._tool({"here": {"a": "prvi deo", "b": "drugi deo"}}, activity_key="here")
-        tool.source.hits = []
-        tool.source.here_hits = [Hit("a", 0.40, "here")]
+    async def test_the_page_the_teacher_is_on_is_taken_out_of_the_search(self):
+        """Its whole text is in the system message, so a hit could only report it back --
+        after spending a hit of `k` and a slot of `max_activities` on it."""
+        chunks = {"here": {"h": "ova lekcija"}, "act-1": {"a": "druga lekcija"}}
+        tool = self._tool(chunks, exclude_activity="here")
 
         result = await tool.run({"questions": ["Sta je rekurzija?"]})
 
-        self.assertEqual(len(result["passages"]), 1)
-        self.assertNotIn("excerpt", result["passages"][0])
-        self.assertIn("drugi deo", result["passages"][0]["text"])
+        # The nearer of the two, and it does not so much as take a slot.
+        self.assertEqual([p["text"] for p in result["passages"]], ["druga lekcija"])
+        self.assertNotIn("note", result)
+
+    async def test_a_page_the_model_has_only_part_of_is_not_reported_as_known(self):
+        """Widening is all-or-nothing, so one held chunk used to drop the page entirely --
+        telling the model it already had sections it had never been given."""
+        page = {"s0": "prvi deo", "s1": "drugi deo"}
+        evidence = Evidence(count_tokens=len)
+        evidence.deliver("s0", page["s0"])
+        tool = self._tool({"here": page}, evidence=evidence)
+
+        result = await tool.run({"questions": ["Sta je rekurzija?"]})
+
+        self.assertEqual([p["text"] for p in result["passages"]], ["drugi deo"])
+        self.assertNotIn("note", result)
+
+    async def test_the_current_page_tool_reaches_sections_the_prompt_left_out(self):
+        """Offered only for a page too long to go in whole. `search_course` excludes that
+        page, so this is the one route to the rest of it -- and a question the model sends
+        here is a request for this page by name, which no distance may refuse.
+        """
+        page = {f"s{i}": f"zadatak {i}" for i in range(6)}
+        evidence = Evidence(count_tokens=len)
+        for carried in ("s0", "s1", "s2"):
+            evidence.deliver(carried, page[carried])      # what the prompt sampled
+        tool = self._tool({"here": page}, only_activity="here", evidence=evidence)
+        tool.source.here_hits = [Hit("s4", 0.80, "here")]
+
+        result = await tool.run({"questions": ["Cetvrti zadatak"]})
+
+        self.assertEqual([p["text"] for p in result["passages"]], ["zadatak 4"])
+        self.assertTrue(result["passages"][0]["excerpt"])
 
     async def test_a_second_call_reports_what_the_model_already_has(self):
         tool = self._tool({"act-1": {"a": "tekst lekcije"}})
@@ -467,16 +563,6 @@ class CourseSearchToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('"Ima li kviza?"', result["note"])
         self.assertNotIn("Sta je rekurzija?", result["note"])
 
-    async def test_the_page_the_teacher_is_on_is_not_held_to_the_cutoff(self):
-        """It is relevant by where the teacher is, and capped at here_k either way."""
-        tool = self._tool({"here": {"a": "zadatak"}}, activity_key="here")
-        tool.source.hits = []
-        tool.source.here_hits = [Hit("a", 0.88, "here")]
-
-        result = await tool.run({"questions": ["Tehnika dva pokazivaca"]})
-
-        self.assertEqual([p["text"] for p in result["passages"]], ["zadatak"])
-
     async def test_bad_arguments_come_back_as_data(self):
         tool = self._tool({})
         self.assertIn("error", await tool.run({}))
@@ -547,7 +633,7 @@ class CurrentPageTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([r["via"] for r in evidence.provenance], ["context"])
 
         tool = course_tools.CourseSearchTool(
-            name="search_course", description="d", course_key="c", activity_key="here",
+            name="search_course", description="d", course_key="c",
             source=FakeCourseSource([Hit("a", 0.3, "here")]), db=FakeCourseDB(chunks),
             embed=self._embed, evidence=evidence)
         result = await tool.run({"questions": ["Sta je rekurzija?"]})

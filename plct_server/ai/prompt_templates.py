@@ -14,8 +14,9 @@ SYSTEM_RULES = (
     "either of them:\n"
     "- The page the teacher is looking at is reproduced above, and it says whether that is "
     "the whole page or only part of it. Answer from what is there rather than searching "
-    "for it again. Ask for course material when the question reaches past this page, or "
-    "when the page is only partly included and what you need is missing.\n"
+    "for it again -- searching the course does not reach this page. Ask for course "
+    "material when the question reaches past this page; when the page is only partly "
+    "included, the tool that reaches the rest of it is named where it says so.\n"
     "- Anything you assert about teaching practice -- pedagogy, didactics, lesson design, "
     "assessment, motivation, classroom technique, working with groups -- has to come from "
     "the professional literature, even when you already know the term. This teacher is "
@@ -77,7 +78,8 @@ PAGE_WHOLE = "This is the full text of the page, as the students see it.\n\n{tex
 PAGE_EXCERPT = (
     "This page is too long to include whole: it holds {total} sections, of which {used} "
     "are below -- the ones closest to what the teacher just asked. `[...]` marks where "
-    "text has been left out. Search the course material if you need more of it.\n\n"
+    "text has been left out. `search_current_page` is how you reach the rest of it; the "
+    "other course tool does not search this page.\n\n"
     "What the page as a whole covers:\n\n{summary}\n\n"
     "The sections included:\n\n{text}\n"
 )

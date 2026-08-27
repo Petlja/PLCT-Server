@@ -186,7 +186,7 @@ With the rules first, the last thing the model read before the question was a fe
 tokens of Serbian lesson prose, and over repeated runs the pedagogy layer went unconsulted
 on questions that plainly needed it.
 
-### 7.2 The three tools
+### 7.2 The tools
 
 The tools ([ai/tools/](../plct_server/ai/tools/)) are all shaped the same way, after AIKT's
 `query_knowledge_base`: the only parameter is `questions: string[]`, and the model never sees
@@ -195,8 +195,9 @@ description states its own coverage.
 
 | Tool | Covers | Notes |
 | --- | --- | --- |
-| `search_course` | the course the teacher is in | `k=6` per question, cut off at `max_distance`, plus a second pass filtered to the page the teacher is on (same vector, no second embedding) which is pinned first so it is never dropped; at most 5 activities per call, ranked by best distance |
-| `consult_teaching_literature` | the `Handbook-for-Teachers` bundle | one tool per bundle, `k=5` chunks + 3 concepts per question (one vector, two filtered searches), each concept expanding to its 3 best-ranked chunks; each kind cut off at its own distance, then the call capped at `max_chunks` (12) in rank order |
+| `search_course` | the course the teacher is in, **minus the page they are on** | `k=6` per question, cut off at `max_distance`; at most 5 activities per call, ranked by best distance — see 7.4 |
+| `search_current_page` | the page the teacher is on, and only when the prompt could not carry it whole | same class, `only_activity` instead of `exclude_activity`, `k=3`, **no distance cutoff** — see 7.4 |
+| `consult_teaching_literature` | the `Handbook-for-Teachers` bundle | one tool per bundle, `k=5` chunks + 3 concepts per question (one vector, two filtered searches), each concept expanding to its 3 best-ranked chunks; each kind cut off at its own distance, then the call capped at `max_chunks` (8) in rank order |
 | `search_platform_docs` | `course_key = "petlja-docs"` | same class as `search_course`, different course and description |
 
 **A bundle's tool is bound to it by `knowledge_unit`**, the name its manifest declares —
@@ -238,20 +239,21 @@ text-embedding-3-large under inner product over normalised vectors, so cosine di
 answers land under ~0.42, noise from ~0.47, `max_distance` **0.45**. The handbook bundle is
 text-embedding-3-small, and within it a chunk hit and a concept hit are two more populations
 — a concept vector is a short name, so it sits nearer any question by construction — hence
-`max_chunk_distance` and `max_concept_distance`, both **0.46**. The page the teacher is on is
-exempt from all of it: it is relevant by where they are standing rather than by distance, and
-it is capped at `here_k` chunks either way.
+`max_chunk_distance` and `max_concept_distance`, both **0.46**. `search_current_page` is the
+one tool with no cutoff at all: it searches a single named page the model asked for by
+calling it, so relevance there is where the teacher is standing, not a distance (7.4).
 
 **The literature call is then capped and ranked.** Five questions at `chunk_k=5`, each
 expanding three concepts into three chunks, reach for 70 of the handbook's 122 chunks — one
 observed call delivered ~25,000 tokens, 40% of the 62k-token corpus, and still overflowed the
 budget twice. Worse, `_deliver` merges runs by ordinal, so *which* material the budget refused
 was decided by document position rather than by relevance. Now the surviving hits are ranked
-and `max_chunks` (12) taken off the top: direct hits by chunk distance first, chunks a matched
+and `max_chunks` (8) taken off the top: direct hits by chunk distance first, chunks a matched
 concept led to after, as two tiers rather than one merged ranking — the distances are not
 comparable across kinds, and a chunk the question hit outright is the better evidence. On the
-call above that is 12 chunks and ~6,500 tokens where it was ~49 and ~25,000, and the cutoff
-alone accounts for 12,163 tokens of refused text.
+call above that is 8 chunks and ~4,000 tokens where it was ~49 and ~25,000, and the cutoff
+alone accounts for 12,163 tokens of refused text. What the cap trims is the tail of the
+concept tier, which is the weakest evidence in the call by construction.
 
 A question whose every hit was refused is **named back to the model** — not "nothing matched",
 but which of the questions it just sent found nothing, so it rewords that one instead of
@@ -263,7 +265,39 @@ answers it, since answering *no* means reading the whole corpus and an index onl
 same steer sits in the `questions` parameter description in
 [questions.py](../plct_server/ai/tools/questions.py), where the model writes them.
 
-### 7.4 Widening a course hit to its page
+### 7.4 The current page: excluded from one tool, given its own
+
+The teacher asking about the page they are looking at is the primary case, and it is
+answered by **putting the whole page in the prompt**, not by retrieving it. So
+`search_course` takes that activity out of its query unconditionally —
+`{"activity_key": {"$ne": ...}}`, in Chroma rather than after the fact, so `k=6` buys six
+*other* lessons.
+
+The ledger would have deduplicated a hit on it anyway; the point is what happens before
+dedup. `hits` is chunk-level, and the teacher's question is usually about the page they are
+standing on, so its chunks rank near the top **by construction** — a three-chunk current page
+can take three of the six. Dedup then throws all three away and the call comes back thin,
+with nothing in the log saying why. Add a slot of `max_activities` and a `note` telling the
+model it was already given a page it can see in its own prompt.
+
+Earlier versions did the opposite: a second activity-filtered pass (`_here`), uncapped by
+distance, pinned to the first slot so the current page could never be dropped. What that
+bought was a guaranteed wasted slot on every single call.
+
+**The 5% of pages too long to go in whole get `search_current_page` instead** — the same
+class scoped with `only_activity`, `k=3` (as many sections as the prompt itself gave), and
+**no distance cutoff**, because a question sent to a tool that searches one named page is a
+request for that page: the model called it precisely because the sample it was given fell
+short. It is registered only when `PageContext.whole` is false, so on the 95% of pages that
+fit it does not exist. That is deliberate — the tool list is where the model learns which
+of the two cases it is in, and a tool that can only answer `already_provided` is a routing
+mistake waiting to happen. `PAGE_EXCERPT` names it, and `SYSTEM_RULES` says plainly that
+searching the course does not reach this page.
+
+Note the conditional did not disappear, it moved: from *does this tool filter itself* to
+*does this tool exist*. The second is visible to the model; the first was not.
+
+### 7.5 Widening a course hit to its page
 
 A course hit is **widened to its whole page** — in document order, with the build-time
 overlap stripped via `course_db.reconstruct` — unless the page is one of the 26 (1.2%) too
@@ -274,6 +308,14 @@ when the page will not fit the evidence budget still unspent, so the closest mat
 and later ones degrade rather than crowding out the pedagogy layer. Both bounds are one
 comparison, in tokens: a page is widened when it costs no more than
 `min(whole_page_max_tokens, evidence.remaining)`.
+
+**Widening is all-or-nothing**, because the de-overlapped page is one passage and one charge
+against the budget. So a page holding any chunk the model already has cannot be sent whole —
+and it falls back to the matched chunks it is *missing* rather than dropping out. It used to
+drop out, which meant a page the prompt had sampled three sections of was reported as
+already provided in full: a lost answer and a false statement in the same note. The same
+thing happened to any page an earlier call had delivered as excerpts under a tight budget,
+once the budget freed up and `whole` flipped true.
 
 **How the two page caps were chosen.** Both were calibrated over the corpus rather than
 picked. `whole_page_max_tokens` (`chunks_to_tokens(8)` = 13,908) is where the two kinds of
@@ -297,7 +339,7 @@ and a whole page tops out at ~13,900 tokens:
 | **3** | **2,099 (95%)** | **3,072 / 3,468 / 6,168 / 6,168** |
 | 8 | 2,189 (99%) | 3,072 / 3,684 / 7,716 / 13,908 |
 
-### 7.5 The evidence ledger
+### 7.6 The evidence ledger
 
 A single per-request ledger ([tools/evidence.py](../plct_server/ai/tools/evidence.py)) is
 shared by all three tools: text is deduplicated and bounded by a token budget across every

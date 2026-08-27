@@ -13,10 +13,30 @@ PLATFORM_COURSE_KEY = "petlja-docs"
 _LANGUAGE_TAIL = questions_arg.SHARED_TAIL + " Ask in the language the material is written in."
 
 COURSE_DESCRIPTION = (
-    "Ask one or more questions about the course this teacher is preparing and receive the "
+    "Ask one or more questions about the subject matter this course teaches and receive the "
     "passages of course material that answer them best -- lesson text, worked examples, "
-    "exercises and tests, in the words the students read. " + _LANGUAGE_TAIL
+    "exercises and tests, in the words the students read. Ask for the subject itself, in "
+    "the terms the material uses to teach it: \"how does binary search narrow the "
+    "interval it looks in?\", never \"is there a lesson about binary search in this "
+    "course?\". The second kind has no passage that answers it, and the nearest unrelated "
+    "pages come back in its place. " + _LANGUAGE_TAIL
 )
+
+# Offered only when the page did not fit the prompt whole -- `engine._build_tools`. On the
+# 95% of pages that did fit, a tool over the current page could answer nothing the model has
+# not already read, and an unusable tool in the list is a routing mistake waiting to happen.
+CURRENT_PAGE_DESCRIPTION = (
+    "Ask one or more questions about the page the teacher is looking at and receive the "
+    "sections of it that answer them best. This page was too long to reproduce whole in "
+    "your context: what you were given is a sample of it, marked as such, and this is how "
+    "you reach the rest. Use it when the teacher asks about something on this page that "
+    "the sample does not cover -- a further exercise, a later section, whatever the "
+    "`[...]` stands in for. " + _LANGUAGE_TAIL
+)
+
+# Three sections, as many as the prompt itself gave: ~9,200 tokens at 3,072 a chunk, which
+# is as much of one page as the budget can spare with the rest of the course still to fund.
+CURRENT_PAGE_K = 3
 
 # Must not mention assessment or grading -- that pulls such questions off the literature.
 PLATFORM_DESCRIPTION = (
@@ -41,14 +61,7 @@ class Limits:
     """How much one call may pull back. Calibrated over the corpus -- doc/ai_flow.md section 6."""
 
     k: int = 6                          # hits per question, course-wide
-    here_k: int = 4                     # ...and from the page the teacher is on
     max_activities: int = 5             # activities delivered per call, closest first
-    # Cosine distance under text-embedding-3-large over the course corpus, where answers
-    # land under ~0.42 and noise from ~0.47. The bundle layer embeds with -3-small, so its
-    # scale is a different population and neither cutoff transfers. Past this a hit is not
-    # returned at all: without it no question can fail, and the nearest unrelated page is
-    # charged to the evidence budget ahead of one that could have been answered. The log
-    # marks what was refused, to recalibrate on.
     max_distance: float = 0.45
     whole_page_max_tokens: int = chunks_to_tokens(8)
 
@@ -58,29 +71,43 @@ class CourseSearchTool:
 
     def __init__(self, *, name: str, description: str, course_key: str, source,
                  db: CourseDB, embed: Callable[[str], Awaitable[list[float]]],
-                 evidence, activity_key: str = "", limits: "Limits | None" = None):
+                 evidence, exclude_activity: str = "", only_activity: str = "",
+                 limits: "Limits | None" = None):
         self.name = name
         self.course_key = course_key
-        self.activity_key = activity_key
         self.source = source
         self.db = db
         self.embed = embed
         self.evidence = evidence
         self.limits = limits or Limits()
         self.definition = questions_arg.definition(name, description)
+        # A tool searches the course minus one page, or that one page alone -- never both,
+        # and the two are separate tools. `search_course` excludes the page the teacher is
+        # on unconditionally: it is in the system message, booked chunk by chunk in the
+        # ledger, so a hit on it comes back as already-provided after spending a hit of `k`
+        # and a slot of `max_activities` a further lesson would have used. Since the
+        # teacher's question is usually about the page they are standing on, its chunks
+        # rank near the top by construction and can take several of the six. Filtered in
+        # Chroma rather than after the fact, so `k` is `k` other lessons.
+        self._where: dict = {"course_key": course_key}
+        if only_activity:
+            self._where = {"$and": [self._where, {"activity_key": only_activity}]}
+        elif exclude_activity:
+            self._where = {"$and": [self._where,
+                                    {"activity_key": {"$ne": exclude_activity}}]}
+
+        # `None` where distance may not refuse a hit. Searching one named page is a request
+        # for that page: the model asked because the sample it was given fell short, and
+        # material is relevant there by where the teacher is standing rather than by
+        # distance. Every other search is held to the cutoff.
+        self._max_distance: float | None = (
+            None if only_activity else self.limits.max_distance)
 
     # ------------------------------------------------------------------ labels
 
     def _chunk_ids(self, activity_key: str) -> list[str]:
         """Every chunk of one activity, hit or not. One Chroma get, no text, no network."""
         return list(self.db.get_by_activity(self.course_key, activity_key))
-
-    def _here(self, embedding: list[float]) -> list:
-        """The best chunks of the page the teacher is on. Empty when there is none."""
-        if not self.activity_key:
-            return []
-        return self.source.search(embedding, k=self.limits.here_k, where={"$and": [
-            {"course_key": self.course_key}, {"activity_key": self.activity_key}]})
 
     def _log(self, question: str, hits: list) -> None:
         """One question's course-wide hits, `far` marking the ones the cutoff drops.
@@ -90,11 +117,12 @@ class CourseSearchTool:
         The nearest is repeated as `best=` so that reading where a question landed over a
         run of them is a grep rather than a reading of every line.
         """
+        far = self._max_distance
         logger.info("%s: %r -> best=%s %s", self.name, question,
                     f"{hits[0].distance:.3f}" if hits else "-",
                     ", ".join(
                         f"{hit.id[:8]}={hit.distance:.3f}"
-                        f"{'' if hit.distance <= self.limits.max_distance else ' far'}"
+                        f"{' far' if far is not None and hit.distance > far else ''}"
                         for hit in hits) or "none")
 
     # ------------------------------------------------------------------ running
@@ -110,11 +138,10 @@ class CourseSearchTool:
 
         for question in questions:
             embedding = await self.embed(question)
-            hits = self.source.search(embedding, k=self.limits.k,
-                                      where={"course_key": self.course_key})
+            hits = self.source.search(embedding, k=self.limits.k, where=self._where)
             self._log(question, hits)
-            near = self._here(embedding) + [h for h in hits
-                                            if h.distance <= self.limits.max_distance]
+            near = hits if self._max_distance is None else [
+                h for h in hits if h.distance <= self._max_distance]
 
             if not near:
                 unanswered.append(question)
@@ -132,9 +159,8 @@ class CourseSearchTool:
             return {"passages": [],
                     "note": questions_arg.too_far("this material", unanswered)}
 
+
         found = sorted(hit_ids, key=lambda key: best[key])
-        if self.activity_key in hit_ids:
-            found = [self.activity_key] + [k for k in found if k != self.activity_key]
         dropped = len(found) - self.limits.max_activities
 
         passages: list[dict[str, Any]] = []
@@ -184,11 +210,15 @@ class CourseSearchTool:
                         "%d left -- sending the %d matched chunk(s)", self.name,
                         activity_key, cost, self.evidence.remaining, len(hits))
 
-        # A whole page is one all-or-nothing charge, so a single chunk already sent stands
-        # for the page. An excerpt is budgeted per chunk, so the sent ones are taken out.
-        if whole:
-            ids = [] if any(self.evidence.holds(i) for i in all_ids) else all_ids
+        # Widening is all-or-nothing -- the de-overlapped page is one passage and one charge
+        # -- so a page holding any chunk the model already has cannot be sent whole. It falls
+        # back to the matched chunks it is missing rather than dropping out: a page the
+        # prompt could only sample three sections of still holds material never seen, and
+        # reporting all of it as already provided is both a lost answer and a false one.
+        if whole and not any(self.evidence.holds(i) for i in all_ids):
+            ids = all_ids
         else:
+            whole = False
             ids = [i for i in hits if not self.evidence.holds(i)]
         if not ids:
             return None
@@ -225,6 +255,13 @@ class CourseSearchTool:
 
 def course_search_tool(**kwargs) -> CourseSearchTool:
     return CourseSearchTool(name="search_course", description=COURSE_DESCRIPTION, **kwargs)
+
+
+def current_page_search_tool(**kwargs) -> CourseSearchTool:
+    """`search_current_page`, over the one page the prompt could not carry whole."""
+    kwargs.setdefault("limits", Limits(k=CURRENT_PAGE_K))
+    return CourseSearchTool(name="search_current_page",
+                            description=CURRENT_PAGE_DESCRIPTION, **kwargs)
 
 
 def platform_search_tool(**kwargs) -> CourseSearchTool:

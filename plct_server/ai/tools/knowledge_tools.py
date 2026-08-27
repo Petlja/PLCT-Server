@@ -27,18 +27,9 @@ class Limits:
     chunk_k: int = 5                    # chunk hits per question
     concept_k: int = 3                  # ...and concepts, each expanding to its own chunks
     chunks_per_concept: int = 3
-    # Two cutoffs rather than one: a concept vector is a short name, so it sits nearer any
-    # question by construction and its distances are a different population from a chunk's.
-    # Cosine over the bundle's own embedder -- text-embedding-3-small here, where the course
-    # layer is -3-large, so neither layer's scale transfers to the other. Over this handbook
-    # answers land under ~0.46. The log marks what each cutoff refused, to recalibrate on.
     max_chunk_distance: float = 0.46
     max_concept_distance: float = 0.46
-    # The handbook is 122 chunks, 62k tokens. Five questions at chunk_k=5, each with three
-    # concepts of three chunks, reach for 70 of those chunks: that is not retrieval, it is
-    # paging in the book, and it spends an evidence budget the course layer also needs.
-    # The cap is what keeps a call worth a few passages instead of a third of the corpus.
-    max_chunks: int = 12
+    max_chunks: int = 8
 
 
 @dataclass(frozen=True)

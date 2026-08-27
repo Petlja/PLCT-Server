@@ -5,7 +5,13 @@ from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MAX_EVIDENCE_TOKENS = 25_000
+DEFAULT_MAX_EVIDENCE_TOKENS = 35_000
+
+# Below this the budget is spent in the only sense the model can act on: a course chunk is
+# 3,072 tokens on a fixed stride and a whole page is larger still, so nothing the course
+# layer holds can arrive any more. The handbook could still squeeze one ~500-token passage
+# in, which is not worth another round against the risk of searching instead of answering.
+EXHAUSTED_BELOW = 3_072
 
 
 def estimate_tokens(text: str) -> int:
@@ -22,7 +28,6 @@ class Evidence:
         self._count = count_tokens or estimate_tokens
         self.delivered: dict[str, int] = {}     # passage id -> tokens it cost
         self.tokens = 0
-        self.exhausted = False
         self.provenance: list[dict[str, str]] = []   # for the offline report, not the model
 
     def holds(self, passage_id: str) -> bool:
@@ -32,6 +37,18 @@ class Evidence:
     def remaining(self) -> int:
         """Budget still unspent. What a tool asks before choosing how much to send."""
         return max(0, self.max_tokens - self.tokens)
+
+    @property
+    def exhausted(self) -> bool:
+        """Is there room left for anything worth fetching?
+
+        Read off what is unspent, never latched by a refusal. One page too large to fit is
+        not a spent budget: latching there told the model to stop searching while most of
+        the budget was still free, and the largest pages are exactly the ones that trip it.
+        Being true before anything is refused is the point rather than a side effect -- the
+        warning is worth more ahead of a wasted round than after one.
+        """
+        return self.remaining < EXHAUSTED_BELOW
 
     def deliver(self, passage_id: str, text: str, *, token_count: int | None = None,
                 record: dict[str, str] | None = None, **labels: Any) -> dict[str, Any]:
@@ -47,7 +64,6 @@ class Evidence:
             else self._count(text)
 
         if self.delivered and self.tokens + tokens > self.max_tokens:
-            self.exhausted = True
             logger.info("evidence: budget exhausted, %d tok would exceed %d",
                         tokens, self.max_tokens)
             return {**labels, "status": "budget_exhausted"}

@@ -12,9 +12,10 @@ from ..knowledge.course_db import CourseDB
 from .language import dominant_script
 from .model_conf import ModelConfig, ModelProvider, MODEL_CONFIGS_LIST
 from .query_context import QueryContext, QueryError
-from .tools import (Evidence, PLATFORM_COURSE_KEY, ToolLoop, bundle_search_tool,
-                    current_page, offering, render_course_map)
-from .tools.course_tools import course_search_tool, platform_search_tool
+from .tools import (Evidence, PageContext, PLATFORM_COURSE_KEY, ToolLoop,
+                    bundle_search_tool, current_page, offering, render_course_map)
+from .tools.course_tools import (course_search_tool, current_page_search_tool,
+                                 platform_search_tool)
 from .prompt_templates import (CONTEXT_SEGMENT, NO_COURSE_CONTEXT, PAGE_EXCERPT,
                                PAGE_SUMMARY_ONLY, PAGE_WHOLE, SCOPE, SCRIPT_INSTRUCTION,
                                SYSTEM_HEADER, SYSTEM_RULES)
@@ -175,12 +176,16 @@ class AiEngine:
     # ------------------------------------------------------------------ the prompt
 
     async def _context_segment(self, query: str, course_key: str, activity_key: str,
-                               evidence: Evidence) -> str:
-        """Course summary, course map, and the page the teacher is on -- as text."""
+                               evidence: Evidence) -> tuple[str, PageContext | None]:
+        """Course summary, course map, and the page the teacher is on -- as text.
+
+        The `PageContext` comes back out because the tools need it: whether the page went in
+        whole decides whether `search_course` still searches it.
+        """
         course_summary, activity_summary = self.ctx_data.get_summary_texts(
             course_key, activity_key)
         if not course_summary:
-            return NO_COURSE_CONTEXT
+            return NO_COURSE_CONTEXT, None
 
         course_map = render_course_map(self.course_db, course_key,
                                        current=activity_key)
@@ -199,13 +204,15 @@ class AiEngine:
             page_segment = PAGE_EXCERPT.format(total=page.total, used=page.used,
                                                summary=summary, text=page.text)
         return CONTEXT_SEGMENT.format(course_summary=course_summary,
-                                      course_map=course_map, page=page_segment)
+                                      course_map=course_map, page=page_segment), page
 
     async def make_system_message(self, query: str, course_key: str, activity_key: str,
                                   evidence: Evidence,
                                   query_context: QueryContext | None = None,
-                                  encoding: Encoding | None = None) -> str:
-        context = await self._context_segment(query, course_key, activity_key, evidence)
+                                  encoding: Encoding | None = None
+                                  ) -> tuple[str, PageContext | None]:
+        context, page = await self._context_segment(query, course_key, activity_key,
+                                                    evidence)
         rules = SYSTEM_RULES.format(
             script_instruction=SCRIPT_INSTRUCTION.format(script=dominant_script(query)),
             scope=SCOPE)
@@ -215,19 +222,23 @@ class AiEngine:
                  {"name": "context", "message": context},
                  {"name": "rules", "message": rules}],
                 encoding or self.fallback_encoding)
-        return SYSTEM_HEADER + "\n" + context + "\n" + rules
+        return SYSTEM_HEADER + "\n" + context + "\n" + rules, page
 
     # ------------------------------------------------------------------ the tools
 
     def _build_tools(self, course_key: str, activity_key: str,
-                     evidence: Evidence) -> list:
+                     page: PageContext | None, evidence: Evidence) -> list:
+        """The tools this request is offered. `page` decides whether one of them exists."""
         tools = []
+        course = dict(source=self.courses, db=self.course_db,
+                      embed=self.courses.query_embedder(self._create_embedding),
+                      evidence=evidence)
         if course_key and course_key in self.ctx_data.course_dict:
             tools.append(course_search_tool(
-                course_key=course_key, activity_key=activity_key,
-                source=self.courses, db=self.course_db,
-                embed=self.courses.query_embedder(self._create_embedding),
-                evidence=evidence))
+                course_key=course_key, exclude_activity=activity_key, **course))
+            if page is not None and not page.whole:
+                tools.append(current_page_search_tool(
+                    course_key=course_key, only_activity=activity_key, **course))
         for bundle in self.bundles:
             tools.append(bundle_search_tool(
                 source=bundle, embed=bundle.query_embedder(self._create_embedding),
@@ -256,14 +267,14 @@ class AiEngine:
             return self.count_tokens(text, encoding)
 
         evidence = Evidence(count_tokens=count)
-        system_message = await self.make_system_message(query, course_key, activity_key,
-                                                        evidence, query_context, encoding)
+        system_message, page = await self.make_system_message(
+            query, course_key, activity_key, evidence, query_context, encoding)
         messages = create_message(system_message, history, query)
         for item in history:
             query_context.add_encoding_length("history", item[0] + item[1], encoding)
         query_context.add_encoding_length("user_query", query, encoding)
 
-        tools = (self._build_tools(course_key, activity_key, evidence)
+        tools = (self._build_tools(course_key, activity_key, page, evidence)
                  if config.supports_tools else [])
         if not config.supports_tools:
             logger.info("model '%s' is configured without tool support -- answering in one "
