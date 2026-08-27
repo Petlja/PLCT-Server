@@ -4,20 +4,25 @@ import unittest
 from unittest.mock import patch
 
 from plct_server.ai import debug_stream
-from plct_server.endpoints.ui_api import PROGRESS_MESSAGES, ChatInput, stream_response
+from plct_server.ai.engine import PROGRESS_STAGES
+from plct_server.endpoints.ui_api import (PROGRESS_MESSAGES, ChatInput,
+                                          progress_message, stream_response)
 
 PIPELINE_LOGGER = logging.getLogger("plct_server.ai.engine")
 
 
 class FakeAiEngine:
+    """The stages a real run publishes, in the order a real run publishes them."""
+
     async def generate_answer(self, **kwargs):
         progress_callback = kwargs["progress_callback"]
         await progress_callback("preparing_answer")
-        PIPELINE_LOGGER.info("tool round %d/%d: %d call(s)", 1, 4, 2)
+        PIPELINE_LOGGER.info("round 1 of at most 4: the model asks for 2 tool calls")
         await progress_callback("retrieving", "search_course")
 
         async def answer():
-            PIPELINE_LOGGER.info("answered in 1 tool round(s)")
+            await progress_callback("analyzing", "search_course")
+            PIPELINE_LOGGER.info("answered after 1 tool round and 2 calls")
             yield "Prvi\nred"
 
         return answer(), None
@@ -49,11 +54,11 @@ class StreamResponseTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             [event["type"] for event in events],
-            ["progress", "progress", "content", "done"],
+            ["progress", "progress", "progress", "content", "done"],
         )
         self.assertEqual(events[1]["detail"], "search_course")
         self.assertNotIn("detail", events[0])
-        self.assertEqual(events[2]["text"], "Prvi\nred")
+        self.assertEqual(events[3]["text"], "Prvi\nred")
 
     async def test_debug_mode_lifts_the_pipeline_loggers_to_info(self):
         """Nothing to tee otherwise: a server runs at WARNING unless told otherwise."""
@@ -74,18 +79,20 @@ class StreamResponseTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             [event["type"] for event in events],
-            ["debug", "progress", "debug", "debug", "progress", "debug",
-             "content", "done"],
+            ["debug", "progress", "debug", "debug", "progress", "debug", "progress",
+             "debug", "content", "done"],
             "records are teed where they happen, in among the answer's own events")
         traced = [event for event in events if event["type"] == "debug"]
         self.assertEqual(
             [event["message"] for event in traced],
-            ["progress -> Pripremam odgovor...",
-             "tool round 1/4: 2 call(s)",
-             "progress -> Tražim relevantne delove sadržaja... [search_course]",
-             "answered in 1 tool round(s)"])
+            ["the teacher now sees: Pripremam odgovor... [preparing_answer]",
+             "round 1 of at most 4: the model asks for 2 tool calls",
+             "the teacher now sees: Pretražujem materijal kursa... "
+             "[retrieving: search_course]",
+             "the teacher now sees: Analiziram pronađeno... [analyzing: search_course]",
+             "answered after 1 tool round and 2 calls"])
         self.assertEqual([event["source"] for event in traced],
-                         ["ui", "ai.engine", "ui", "ai.engine"])
+                         ["ui", "ai.engine", "ui", "ui", "ai.engine"])
         self.assertEqual({event["level"] for event in traced}, {"INFO"})
         self.assertTrue(all(isinstance(event["elapsed"], float) for event in traced))
 
@@ -95,9 +102,20 @@ class StreamResponseTests(unittest.IsolatedAsyncioTestCase):
 
         PIPELINE_LOGGER.info("a record logged with nothing listening must be harmless")
 
-    async def test_every_published_stage_has_a_message(self):
+    async def test_every_stage_the_engine_publishes_has_a_message(self):
         """The stage set is a wire contract: publishing one that is absent raises."""
-        self.assertEqual(set(PROGRESS_MESSAGES), {"preparing_answer", "retrieving"})
+        self.assertEqual(set(PROGRESS_MESSAGES), set(PROGRESS_STAGES))
+
+    def test_a_search_is_announced_by_what_it_is_searching(self):
+        self.assertEqual(progress_message("retrieving", "consult_teaching_literature"),
+                         "Pretražujem stručnu literaturu o nastavi...")
+        self.assertEqual(
+            progress_message("retrieving", "search_course, search_platform_docs"),
+            "Pretražujem materijal kursa i uputstvo za petlja.org...")
+
+    def test_a_tool_with_no_phrase_falls_back_to_the_generic_line(self):
+        self.assertEqual(progress_message("retrieving", "search_something_new"),
+                         PROGRESS_MESSAGES["retrieving"])
 
 
 if __name__ == "__main__":

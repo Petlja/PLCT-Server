@@ -64,11 +64,19 @@ SCOPE = (
     "that you cannot resolve, refer the teacher to loop@petlja.org."
 )
 
-CONTEXT_SEGMENT = (
+# Three parts rather than one template, because the prompt is measured part by part --
+# `engine` joins them with a newline, which is the segment they used to be.
+CONTEXT_COURSE = (
     "# The course\n\n"
-    "{course_summary}\n\n"
+    "{course_summary}\n"
+)
+
+CONTEXT_MAP = (
     "# The course contents\n\n"
-    "{course_map}\n\n"
+    "{course_map}\n"
+)
+
+CONTEXT_PAGE = (
     "# The page the teacher is looking at\n\n"
     "{page}\n"
 )

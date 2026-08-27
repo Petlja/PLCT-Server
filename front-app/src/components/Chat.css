@@ -85,11 +85,13 @@
   overflow-wrap: anywhere;
 }
 
-/* The message is the only part worth reading in full, so it keeps the server's own
-   line breaks and wraps rather than scrolling the panel sideways. */
+/* Much of the message is laid out in columns the server aligned, which wrapping would
+   destroy -- so lines are kept as written and a long one scrolls inside its own cell.
+   `min-width: 0` is what lets a grid item scroll rather than grow to its content. */
 .debug-message {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  white-space: pre;
+  min-width: 0;
+  overflow-x: auto;
 }
 
 /* What the reader was shown, as opposed to what the pipeline did. */

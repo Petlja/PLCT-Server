@@ -5,6 +5,7 @@ from typing import Any, Awaitable, Callable
 from ...knowledge.chunk_order import chunks_to_tokens
 from ...knowledge.course_db import CourseDB
 from . import questions as questions_arg
+from .. import narration
 
 logger = logging.getLogger(__name__)
 
@@ -109,21 +110,36 @@ class CourseSearchTool:
         """Every chunk of one activity, hit or not. One Chroma get, no text, no network."""
         return list(self.db.get_by_activity(self.course_key, activity_key))
 
-    def _log(self, question: str, hits: list) -> None:
-        """One question's course-wide hits, `far` marking the ones the cutoff drops.
+    def _log_question(self, position: int, total: int, question: str,
+                      hits: list) -> None:
+        """One question and what searching the material with it turned up. Refused
+        distances are not dropped, only moved to DEBUG: `max_distance` is calibrated off
+        them."""
+        logger.info("%s", narration.block(
+            f'{self.name}, question {position} of {total}: "{question}"',
+            narration.INDENT + narration.search_outcome("passage", hits,
+                                                        self._max_distance)))
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("%s: %s", self.name,
+                         narration.distances(hits, self._max_distance))
 
-        The refused distances stay in the log, because `max_distance` is calibrated off
-        them: a threshold whose rejections are invisible cannot be moved with any evidence.
-        The nearest is repeated as `best=` so that reading where a question landed over a
-        run of them is a grep rather than a reading of every line.
-        """
-        far = self._max_distance
-        logger.info("%s: %r -> best=%s %s", self.name, question,
-                    f"{hits[0].distance:.3f}" if hits else "-",
-                    ", ".join(
-                        f"{hit.id[:8]}={hit.distance:.3f}"
-                        f"{' far' if far is not None and hit.distance > far else ''}"
-                        for hit in hits) or "none")
+    def _log_call(self, questions: list, activities: int, dropped: int,
+                  passages: list, known: int, *, spent: int) -> None:
+        """What the whole call handed back: places in the material, and what they cost."""
+        asked = f"{self.name} answered {narration.plural(len(questions), 'question')} -- "
+        if not activities:
+            logger.info("%s", asked + "nothing in this material was near enough")
+            return
+        outcome = [f"{narration.plural(activities, 'place')} in the material",
+                   f"{narration.plural(len(passages), 'passage')} sent, "
+                   f"{narration.tok(spent)}"]
+        if known:
+            outcome.append(f"{narration.count(known)} it already had")
+        if dropped > 0:
+            outcome.append(f"{narration.count(dropped)} left behind by the cap")
+        logger.info("%s", narration.block(
+            asked + "; ".join(outcome),
+            narration.INDENT + narration.evidence_line(self.evidence)))
 
     # ------------------------------------------------------------------ running
 
@@ -136,10 +152,10 @@ class CourseSearchTool:
         best: dict[str, float] = {}              # activity -> its closest hit
         unanswered: list[str] = []               # questions whose every hit was too far
 
-        for question in questions:
+        for position, question in enumerate(questions, start=1):
             embedding = await self.embed(question)
             hits = self.source.search(embedding, k=self.limits.k, where=self._where)
-            self._log(question, hits)
+            self._log_question(position, len(questions), question, hits)
             near = hits if self._max_distance is None else [
                 h for h in hits if h.distance <= self._max_distance]
 
@@ -156,6 +172,7 @@ class CourseSearchTool:
 
         # Empty here means every question was too far, so they are all named.
         if not hit_ids:
+            self._log_call(questions, 0, 0, [], 0, spent=0)
             return {"passages": [],
                     "note": questions_arg.too_far("this material", unanswered)}
 
@@ -165,6 +182,7 @@ class CourseSearchTool:
 
         passages: list[dict[str, Any]] = []
         known = 0
+        before = self.evidence.tokens
         for activity_key in found[:self.limits.max_activities]:
             page = self._deliver_activity(activity_key, hit_ids[activity_key])
             # None and [] are different facts: material the model has, and material the
@@ -173,6 +191,8 @@ class CourseSearchTool:
                 known += 1
             else:
                 passages += page
+        self._log_call(questions, min(len(found), self.limits.max_activities), dropped,
+                       passages, known, spent=self.evidence.tokens - before)
 
         # What could not be sent is said once, in prose, rather than as passages with no
         # text in them: one shape reaches the model, and it is always material.
@@ -206,9 +226,11 @@ class CourseSearchTool:
         cost = chunks_to_tokens(len(all_ids))
         whole = 0 < cost <= min(self.limits.whole_page_max_tokens, self.evidence.remaining)
         if not whole and cost <= self.limits.whole_page_max_tokens:
-            logger.info("%s: %s is short enough to widen but ~%d tok will not fit in the "
-                        "%d left -- sending the %d matched chunk(s)", self.name,
-                        activity_key, cost, self.evidence.remaining, len(hits))
+            logger.info("%s: '%s' is short enough to send whole, but the ~%s it needs will "
+                        "not fit in the %s left -- sending the %s that matched instead",
+                        self.name, activity_key, narration.tok(cost),
+                        narration.tok(self.evidence.remaining),
+                        narration.plural(len(hits), "section"))
 
         # Widening is all-or-nothing -- the de-overlapped page is one passage and one charge
         # -- so a page holding any chunk the model already has cannot be sent whole. It falls
@@ -236,7 +258,8 @@ class CourseSearchTool:
             return []
 
         if whole and not runs[0].ordered:
-            logger.info("%s: %s not reconstructable (%s)", self.name, activity_key,
+            logger.info("%s: '%s' could not be put back into document order, so it goes "
+                        "out as it is (%s)", self.name, activity_key,
                         "; ".join(runs[0].problems))
         ordered = runs[0].ordered if whole else len(runs) == 1
 

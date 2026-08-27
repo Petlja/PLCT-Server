@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
 from . import questions as questions_arg
+from .. import narration
 
 logger = logging.getLogger(__name__)
 
@@ -100,15 +101,51 @@ class BundleSearchTool:
         self.limits = limits or Limits()
         self.definition = questions_arg.definition(self.name, offering.description)
 
-    def _far(self, hits: list, cutoff: float, name: Callable[[Any], Any]) -> str:
-        """Every hit with its distance, `far` marking the ones the cutoff drops.
-
-        The refused distances stay in the log, because the cutoffs are calibrated off them:
-        a threshold whose rejections are invisible cannot be moved with any evidence.
+    def _log_question(self, position: int, total: int, question: str,
+                      chunk_hits: list, concept_hits: list) -> None:
+        """One question and what both of its searches found, as one block -- they answer
+        the same question and are read together. Refused distances are not dropped, only
+        moved to DEBUG: the cutoffs are calibrated off them.
         """
-        return ", ".join(
-            f"{name(hit)}={hit.distance:.3f}{'' if hit.distance <= cutoff else ' far'}"
-            for hit in hits) or "none"
+        def ordinal(hit):
+            return hit.metadata.get("ordinal")
+
+        def named(hit):
+            return hit.metadata.get("name")
+
+        logger.info("%s", narration.block(
+            f'{self.name}, question {position} of {total}: "{question}"',
+            narration.INDENT + "passages: " + narration.search_outcome(
+                "passage", chunk_hits, self.limits.max_chunk_distance, ordinal),
+            narration.INDENT + "concepts: " + narration.search_outcome(
+                "concept", concept_hits, self.limits.max_concept_distance, named)
+            if self.limits.concept_k else ""))
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("%s: passages %s | concepts %s", self.name,
+                         narration.distances(chunk_hits, self.limits.max_chunk_distance,
+                                             ordinal),
+                         narration.distances(concept_hits,
+                                             self.limits.max_concept_distance, named))
+
+    def _log_call(self, questions: list, passages: list, known: int, matched: list,
+                  *, left_behind: int, spent: int) -> None:
+        """What the model actually received, which the per-question lines above cannot say:
+        passages are merged, dropped by the cap, and skipped when it already has them."""
+        asked = f"{self.name} answered {narration.plural(len(questions), 'question')} -- "
+        if not passages and not known:
+            logger.info("%s", asked + "nothing in this literature was near enough")
+            return
+        outcome = [f"{narration.plural(len(passages), 'passage')} sent, "
+                   f"{narration.tok(spent)}"]
+        if known:
+            outcome.append(f"{narration.count(known)} it already had")
+        if left_behind:
+            outcome.append(f"{narration.count(left_behind)} left behind by the cap")
+        if matched:
+            outcome.append(f"concepts: {', '.join(matched)}")
+        logger.info("%s", narration.block(
+            asked + "; ".join(outcome),
+            narration.INDENT + narration.evidence_line(self.evidence)))
 
     # ------------------------------------------------------------------ running
 
@@ -125,29 +162,26 @@ class BundleSearchTool:
         def keep(into: dict[str, float], key: str, distance: float) -> None:
             into[key] = min(into.get(key, distance), distance)
 
-        for question in questions:
+        for position, question in enumerate(questions, start=1):
             # One vector per question: both kinds live in the same collection, indexed by
             # the same embedder, and are told apart by a metadata filter.
             embedding = await self.embed(question)
 
             chunk_hits = self.source.search(embedding, k=self.limits.chunk_k,
                                             where={"kind": "chunk"})
-            logger.info("%s: %r -> %s", self.name, question,
-                        self._far(chunk_hits, self.limits.max_chunk_distance,
-                                  lambda hit: hit.metadata.get("ordinal")))
             near = [h for h in chunk_hits if h.distance <= self.limits.max_chunk_distance]
             for hit in near:
                 keep(direct, hit.id, hit.distance)
 
+            concept_hits = []
             concepts = []
             if self.limits.concept_k:
                 concept_hits = self.source.search(embedding, k=self.limits.concept_k,
                                                   where={"kind": "concept"})
-                logger.info("%s: %r -> concepts %s", self.name, question,
-                            self._far(concept_hits, self.limits.max_concept_distance,
-                                      lambda hit: hit.metadata.get("name")))
                 concepts = [h for h in concept_hits
                             if h.distance <= self.limits.max_concept_distance]
+            self._log_question(position, len(questions), question, chunk_hits,
+                               concept_hits)
             for hit in concepts:
                 name = hit.metadata.get("name")
                 if name and name not in matched:
@@ -166,7 +200,11 @@ class BundleSearchTool:
         ranked += [i for i in sorted(by_concept, key=by_concept.__getitem__)
                    if i not in direct]
 
+        before = self.evidence.tokens
         passages, known = self._deliver(ranked[:self.limits.max_chunks])
+        self._log_call(questions, passages, known, matched,
+                       left_behind=max(0, len(ranked) - self.limits.max_chunks),
+                       spent=self.evidence.tokens - before)
         result: dict[str, Any] = {"passages": passages}
         if matched:
             result["matched_concepts"] = matched

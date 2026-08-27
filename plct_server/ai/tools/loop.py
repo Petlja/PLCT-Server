@@ -3,6 +3,8 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, AsyncIterator, Awaitable, Callable
 
+from .. import narration
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_ROUNDS = 4
@@ -44,12 +46,18 @@ class ToolLoop:
 
     def __init__(self, *, complete: Callable[..., Awaitable[Any]], tools: list,
                  max_rounds: int = DEFAULT_MAX_ROUNDS,
-                 on_round: Callable[[list[dict[str, Any]]], Awaitable[None]] | None = None):
+                 on_round: Callable[[list[dict[str, Any]]], Awaitable[None]] | None = None,
+                 on_results: Callable[[list[dict[str, Any]]], Awaitable[None]] | None = None,
+                 on_answer: Callable[[], Awaitable[None]] | None = None):
         self.complete = complete
         self.tools = {tool.name: tool for tool in tools}
         self.definitions = [tool.definition for tool in tools]
         self.max_rounds = max_rounds
+        # Asked for material, read it, started writing -- three moments, because one
+        # "working..." cannot say which is happening.
         self.on_round = on_round
+        self.on_results = on_results
+        self.on_answer = on_answer
         self.result = ToolLoopResult()
 
     async def stream(self, messages: list[dict[str, Any]]) -> AsyncIterator[str]:
@@ -72,6 +80,8 @@ class ToolLoop:
                 if getattr(delta, "tool_calls", None):
                     calls.add(delta.tool_calls)
                 if getattr(delta, "content", None):
+                    if not answered and self.on_answer:
+                        await self.on_answer()
                     answered = True
                     yield delta.content
 
@@ -82,8 +92,9 @@ class ToolLoop:
                 return
 
             self.result.rounds += 1
-            logger.info("tool round %d/%d: %d call(s)",
-                        self.result.rounds, self.max_rounds, len(collected))
+            logger.info("round %d of at most %d: the model asks for %s",
+                        self.result.rounds, self.max_rounds,
+                        narration.plural(len(collected), "tool call"))
             if self.on_round:
                 await self.on_round(collected)
 
@@ -102,8 +113,11 @@ class ToolLoop:
                     "content": json.dumps(await self._run(position, call),
                                           ensure_ascii=False),
                 })
+            if self.on_results:
+                await self.on_results(collected)
 
-        logger.warning("tool loop exhausted %d rounds without an answer", self.max_rounds)
+        logger.warning("the model used all %d rounds without ever writing an answer",
+                       self.max_rounds)
 
     async def _run(self, position: int, call: dict[str, Any]) -> dict[str, Any]:
         """One call's output. Every call needs one, or the next request is malformed."""
@@ -119,8 +133,7 @@ class ToolLoop:
             return {"error": "Arguments were not valid JSON. Send them again."}
 
         self.result.calls += 1
-        logger.info("  %s(%s)", call["name"],
-                    json.dumps(arguments, ensure_ascii=False)[:300])
+        logger.info("%s", narration.call_block(call["name"], arguments))
         output = await tool.run(arguments)
         self.result.transcript.append(
             (f"{call['name']} {json.dumps(arguments, ensure_ascii=False)}",

@@ -16,9 +16,11 @@ from .tools import (Evidence, PageContext, PLATFORM_COURSE_KEY, ToolLoop,
                     bundle_search_tool, current_page, offering, render_course_map)
 from .tools.course_tools import (course_search_tool, current_page_search_tool,
                                  platform_search_tool)
-from .prompt_templates import (CONTEXT_SEGMENT, NO_COURSE_CONTEXT, PAGE_EXCERPT,
-                               PAGE_SUMMARY_ONLY, PAGE_WHOLE, SCOPE, SCRIPT_INSTRUCTION,
-                               SYSTEM_HEADER, SYSTEM_RULES)
+from .prompt_templates import (CONTEXT_COURSE, CONTEXT_MAP, CONTEXT_PAGE,
+                               NO_COURSE_CONTEXT, PAGE_EXCERPT, PAGE_SUMMARY_ONLY,
+                               PAGE_WHOLE, SCOPE, SCRIPT_INSTRUCTION, SYSTEM_HEADER,
+                               SYSTEM_RULES)
+from . import narration
 
 logger = logging.getLogger(__name__)
 
@@ -55,11 +57,115 @@ FALLBACK_ENCODING = "o200k_base"
 
 ProgressCallback = Callable[[str, str | None], Awaitable[None]]
 
+# Every stage this engine publishes, in the order one run goes through them. Owned here,
+# worded by the endpoint; a stage with nothing to say it fails in `tests/test_ui_api.py`.
+PROGRESS_STAGES = ("reading_page", "preparing_answer", "retrieving", "analyzing",
+                   "writing")
+
 
 async def report_progress(progress_callback: ProgressCallback | None, stage: str,
                           detail: str | None = None) -> None:
     if progress_callback:
         await progress_callback(stage, detail)
+
+
+# ---------------------------------------------------------------- what a request costs
+
+# The prompt as its reader thinks of it: a label, and the parts `QueryContext` measured
+# under it. Grouped by why something is in the prompt, not by which template produced it.
+PROMPT_PARTS: list[tuple[str, tuple[str, ...]]] = [
+    ("the page they are on", ("page",)),
+    ("course summary and map", ("course_summary", "course_map")),
+    ("how to answer", ("header", "rules")),
+    ("the conversation so far", ("history",)),
+    ("their question", ("user_query",)),
+]
+
+# `QueryContext` files one part per tool call under this prefix, keyed by the call itself.
+TOOL_PART_PREFIX = "tool: "
+
+
+def _page_note(page: PageContext | None, *, in_prompt: bool) -> str:
+    """Why the page cost what it cost. When it did not fit, the size it was refused at is
+    what says whether that was reasonable, so a partial page reports both."""
+    if not in_prompt:
+        return "no course open, or not one in the index"
+    if page is None:
+        return "no indexed text for it -- only its summary went in"
+    if page.whole:
+        return f"delivered in full, all {narration.plural(page.total, 'section')}"
+    return (f"delivered in part -- {narration.count(page.used)} of "
+            f"{narration.plural(page.total, 'section')}, because whole it would have "
+            f"taken ~{narration.tok(page.full_tokens)}")
+
+
+def _prompt_rows(sizes: dict[str, int], *, page: PageContext | None,
+                 exchanges: int) -> list:
+    """The prompt broken into the parts it is made of, largest concern first."""
+    notes = {"the page they are on": _page_note(page, in_prompt="page" in sizes)}
+    if exchanges:
+        notes["the conversation so far"] = narration.plural(exchanges, "earlier exchange")
+    return [(label, narration.tok(sum(sizes.get(key, 0) for key in keys)),
+             notes.get(label, ""))
+            for label, keys in PROMPT_PARTS]
+
+
+def log_initial_context(*, config: ModelConfig, sizes: dict[str, int],
+                        page: PageContext | None, tools: list, exchanges: int,
+                        evidence: Evidence) -> None:
+    """What the model is being given before it has asked for anything -- written before the
+    first request, because this is the one number a run can still be stopped over."""
+    prompt = sum(sizes.values())
+    rows = _prompt_rows(sizes, page=page, exchanges=exchanges) + [
+        narration.RULE,
+        ("sent to the model", narration.tok(prompt),
+         f"of the model's {narration.tok(config.context_size)} window "
+         f"({narration.share(prompt, config.context_size)}), with "
+         f"{narration.tok(MAX_ANSWER_TOKENS)} of the rest held back for the answer"),
+        ("evidence budget", narration.tok(evidence.max_tokens),
+         f"{narration.tok(evidence.tokens)} of it already spent on the page, "
+         f"{narration.tok(evidence.remaining)} left to search with"),
+    ]
+    where = f' -- the teacher is on "{page.title}"' if page and page.title else ""
+    offered = (f"{narration.plural(len(tools), 'tool')} it may call: "
+               + ", ".join(tool.name for tool in tools) if tools
+               else "no tools -- it answers from the above alone")
+    logger.info("%s", narration.block(
+        f"initial context for {config.name}{where}",
+        narration.table(rows),
+        narration.INDENT + offered))
+
+
+def log_total_budget(*, config: ModelConfig, sizes: dict[str, int],
+                     page: PageContext | None, exchanges: int, evidence: Evidence,
+                     result, prompt_tokens: int) -> None:
+    """Everything the finished answer cost, in the columns the run opened with plus what
+    the tools sent back -- the only part of the prompt the model chose the size of.
+
+    `sent to the model` is measured on the last turn, not summed from the rows above it:
+    the transcript stores tool payloads indented, and the request also carries the model's
+    own tool-call messages. Close to the column total, not equal to it.
+    """
+    tool_results = sum(size for name, size in sizes.items()
+                       if name.startswith(TOOL_PART_PREFIX))
+    rows = _prompt_rows(sizes, page=page, exchanges=exchanges) + [
+        ("what the tools sent back", narration.tok(tool_results),
+         f"from {narration.plural(result.calls, 'call')} in "
+         f"{narration.plural(result.rounds, 'round')}"),
+        narration.RULE,
+        ("sent to the model", narration.tok(prompt_tokens),
+         f"on the last turn, of the model's {narration.tok(config.context_size)} window "
+         f"({narration.share(prompt_tokens, config.context_size)})"),
+        ("evidence spent", narration.tok(evidence.tokens),
+         f"of the {narration.tok(evidence.max_tokens)} budget "
+         f"({narration.share(evidence.tokens, evidence.max_tokens)}), "
+         f"{narration.tok(evidence.remaining)} left"),
+    ]
+    logger.info("%s", narration.block(
+        f"answered after {narration.plural(result.rounds, 'tool round')} and "
+        f"{narration.plural(result.calls, 'call')}, from "
+        f"{narration.plural(len(evidence.delivered), 'passage')} of material",
+        narration.table(rows)))
 
 
 class AiEngine:
@@ -175,9 +281,13 @@ class AiEngine:
 
     # ------------------------------------------------------------------ the prompt
 
-    async def _context_segment(self, query: str, course_key: str, activity_key: str,
-                               evidence: Evidence) -> tuple[str, PageContext | None]:
-        """Course summary, course map, and the page the teacher is on -- as text.
+    async def _context_parts(self, query: str, course_key: str, activity_key: str,
+                             evidence: Evidence
+                             ) -> tuple[list[dict[str, str]], PageContext | None]:
+        """Course summary, course map, and the page the teacher is on -- as named parts.
+
+        Separate rather than one string because each is also a size, and `log_initial_context`
+        reports them apart. Joined with a newline they are the segment they used to be.
 
         The `PageContext` comes back out because the tools need it: whether the page went in
         whole decides whether `search_course` still searches it.
@@ -185,7 +295,7 @@ class AiEngine:
         course_summary, activity_summary = self.ctx_data.get_summary_texts(
             course_key, activity_key)
         if not course_summary:
-            return NO_COURSE_CONTEXT, None
+            return [{"name": "course_summary", "message": NO_COURSE_CONTEXT}], None
 
         course_map = render_course_map(self.course_db, course_key,
                                        current=activity_key)
@@ -203,26 +313,29 @@ class AiEngine:
         else:
             page_segment = PAGE_EXCERPT.format(total=page.total, used=page.used,
                                                summary=summary, text=page.text)
-        return CONTEXT_SEGMENT.format(course_summary=course_summary,
-                                      course_map=course_map, page=page_segment), page
+        return [
+            {"name": "course_summary",
+             "message": CONTEXT_COURSE.format(course_summary=course_summary)},
+            {"name": "course_map", "message": CONTEXT_MAP.format(course_map=course_map)},
+            {"name": "page", "message": CONTEXT_PAGE.format(page=page_segment)},
+        ], page
 
     async def make_system_message(self, query: str, course_key: str, activity_key: str,
                                   evidence: Evidence,
                                   query_context: QueryContext | None = None,
                                   encoding: Encoding | None = None
                                   ) -> tuple[str, PageContext | None]:
-        context, page = await self._context_segment(query, course_key, activity_key,
-                                                    evidence)
+        context, page = await self._context_parts(query, course_key, activity_key,
+                                                  evidence)
         rules = SYSTEM_RULES.format(
             script_instruction=SCRIPT_INSTRUCTION.format(script=dominant_script(query)),
             scope=SCOPE)
+        parts = ([{"name": "header", "message": SYSTEM_HEADER}] + context
+                 + [{"name": "rules", "message": rules}])
         if query_context:
             query_context.add_system_message_parts(
-                [{"name": "header", "message": SYSTEM_HEADER},
-                 {"name": "context", "message": context},
-                 {"name": "rules", "message": rules}],
-                encoding or self.fallback_encoding)
-        return SYSTEM_HEADER + "\n" + context + "\n" + rules, page
+                parts, encoding or self.fallback_encoding)
+        return "\n".join(part["message"] for part in parts), page
 
     # ------------------------------------------------------------------ the tools
 
@@ -267,6 +380,7 @@ class AiEngine:
             return self.count_tokens(text, encoding)
 
         evidence = Evidence(count_tokens=count)
+        await report_progress(progress_callback, "reading_page")
         system_message, page = await self.make_system_message(
             query, course_key, activity_key, evidence, query_context, encoding)
         messages = create_message(system_message, history, query)
@@ -279,15 +393,29 @@ class AiEngine:
         if not config.supports_tools:
             logger.info("model '%s' is configured without tool support -- answering in one "
                         "turn from the page and course map alone", config.name)
+        log_initial_context(config=config, sizes=query_context.token_size, page=page,
+                            tools=tools, exchanges=len(history), evidence=evidence)
+
+        # The last turn's prompt size, kept for the closing report.
+        turn = 0
+        prompt_tokens = 0
 
         async def complete(*, messages, tools, stream):
+            nonlocal turn, prompt_tokens
             used = sum(count(m.get("content") or "") for m in messages)
             if used > config.context_size - MAX_ANSWER_TOKENS:
                 raise QueryError((
                     f"Context too large for model. Tokens used: {used}",
                     f"Response tokens: {MAX_ANSWER_TOKENS}",
                     f"Model token limit: {config.context_size}"))
-            logger.info("turn: %d token(s) in, tools %s", used, "on" if tools else "off")
+            turn += 1
+            grew = used - prompt_tokens
+            prompt_tokens = used
+            logger.info("turn %d: %s go to the model%s, %s", turn, narration.tok(used),
+                        f" (+{narration.tok(grew)} since the turn before)"
+                        if turn > 1 else "",
+                        f"{narration.plural(len(tools or []), 'tool')} offered" if tools
+                        else "no tools this time -- it has to answer from what it has")
             return await client.chat.completions.create(
                 model=config.name,
                 messages=messages,
@@ -299,21 +427,33 @@ class AiEngine:
                 tools=tools if tools else omit,
                 extra_body=config.extra_body)
 
-        async def on_round(calls) -> None:
-            await report_progress(progress_callback, "retrieving",
-                                  ", ".join(c["name"] for c in calls))
+        # Fetched, then read, then written up: three stages, because the reader waits
+        # through all three and one "working..." says only that the server is alive.
+        def names(calls) -> str:
+            return ", ".join(call["name"] for call in calls)
 
-        loop = ToolLoop(complete=complete, tools=tools, on_round=on_round)
+        async def on_round(calls) -> None:
+            await report_progress(progress_callback, "retrieving", names(calls))
+
+        async def on_results(calls) -> None:
+            await report_progress(progress_callback, "analyzing", names(calls))
+
+        async def on_answer() -> None:
+            await report_progress(progress_callback, "writing")
+
+        loop = ToolLoop(complete=complete, tools=tools, on_round=on_round,
+                        on_results=on_results, on_answer=on_answer)
 
         async def answer_generator():
             async for delta in loop.stream(messages):
                 yield delta
             for label, payload in loop.result.transcript:
                 query_context.add_system_message_parts(
-                    [{"name": f"tool: {label}", "message": payload}], encoding)
+                    [{"name": f"{TOOL_PART_PREFIX}{label}", "message": payload}], encoding)
             query_context.set_chunk_metadata(evidence.provenance)
-            logger.info("answered in %d tool round(s), %d call(s); evidence: %s",
-                        loop.result.rounds, loop.result.calls, evidence.summary())
+            log_total_budget(config=config, sizes=query_context.token_size, page=page,
+                             exchanges=len(history), evidence=evidence,
+                             result=loop.result, prompt_tokens=prompt_tokens)
 
         await report_progress(progress_callback, "preparing_answer")
         return answer_generator(), query_context

@@ -3,6 +3,8 @@
 import logging
 from typing import Any, Callable
 
+from .. import narration
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_EVIDENCE_TOKENS = 35_000
@@ -64,8 +66,9 @@ class Evidence:
             else self._count(text)
 
         if self.delivered and self.tokens + tokens > self.max_tokens:
-            logger.info("evidence: budget exhausted, %d tok would exceed %d",
-                        tokens, self.max_tokens)
+            logger.info("refused: this passage needs %s and only %s of the %s budget is "
+                        "left", narration.tok(tokens), narration.tok(self.remaining),
+                        narration.tok(self.max_tokens))
             return {**labels, "status": "budget_exhausted"}
 
         self.delivered[passage_id] = tokens
@@ -94,7 +97,3 @@ class Evidence:
             for spent in rest:
                 self.deliver(spent, "", token_count=1, **labels)
         return passage
-
-    def summary(self) -> str:
-        return (f"{len(self.delivered)} passage(s), {self.tokens} token(s)"
-                + (", budget exhausted" if self.exhausted else ""))

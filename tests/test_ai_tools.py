@@ -10,6 +10,7 @@ import unittest
 
 import tiktoken
 
+from plct_server.ai import narration
 from plct_server.ai.engine import AiEngine
 from plct_server.ai.language import CYRILLIC, LATIN, dominant_script
 from plct_server.ai.prompt_templates import SYSTEM_HEADER
@@ -152,8 +153,8 @@ class SystemMessageTests(unittest.IsolatedAsyncioTestCase):
         def __init__(self, page):
             self.page = page
 
-        async def _context_segment(self, query, course_key, activity_key, evidence):
-            return "kontekst kursa", self.page
+        async def _context_parts(self, query, course_key, activity_key, evidence):
+            return [{"name": "course_summary", "message": "kontekst kursa"}], self.page
 
     async def _message(self, page):
         return await AiEngine.make_system_message(
@@ -812,6 +813,79 @@ class BundleSearchToolTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result["passages"], [])
         self.assertIn("does not cover", result["note"])
+
+
+class NarrationTests(unittest.TestCase):
+    """The log is a product surface here -- `debug_mode` puts it in front of the teacher."""
+
+    class Hit:
+        def __init__(self, distance, name=""):
+            self.id = "0123456789abcdef"
+            self.distance = distance
+            self._name = name
+
+    @staticmethod
+    def _named(hit):
+        return hit._name
+
+    def test_a_calls_questions_are_laid_out_rather_than_dumped_as_json(self):
+        block = narration.call_block("search_course", {"questions": ["Prvo?", "Drugo?"]})
+
+        self.assertEqual(block.splitlines(),
+                         ["search_course asks 2 questions:",
+                          "    1. Prvo?",
+                          "    2. Drugo?"])
+
+    def test_an_unfamiliar_argument_shape_still_prints(self):
+        self.assertEqual(narration.call_block("other", {"k": 3}), 'other({"k": 3})')
+
+    def test_a_search_reports_what_it_kept_and_what_was_too_far(self):
+        hits = [self.Hit(0.31), self.Hit(0.44), self.Hit(0.47), self.Hit(0.52)]
+
+        self.assertEqual(
+            narration.search_outcome("passage", hits, 0.45),
+            "fetched 4 passages, keeping 2 within 0.450 (0.310-0.440); "
+            "2 too far (0.470-0.520)")
+
+    def test_a_search_that_kept_nothing_names_the_nearest_it_refused(self):
+        """Which one nearly matched is what says whether the cutoff is wrong."""
+        hits = [self.Hit(0.48, "Classroom Management"), self.Hit(0.52, "Rubrics")]
+
+        self.assertEqual(
+            narration.search_outcome("concept", hits, 0.46, self._named),
+            "fetched 2 concepts, keeping none -- the nearest was 0.480 "
+            "(Classroom Management), past the 0.460 cutoff")
+
+    def test_a_search_with_no_cutoff_says_so_rather_than_reporting_a_filter(self):
+        outcome = narration.search_outcome("passage", [self.Hit(0.9)], None)
+
+        self.assertIn("no distance cutoff here", outcome)
+
+    def test_an_empty_search_is_not_a_range_of_nothing(self):
+        self.assertEqual(narration.search_outcome("passage", [], 0.45),
+                         "no passage came back")
+
+    def test_refused_distances_survive_for_whoever_moves_the_cutoff(self):
+        hits = [self.Hit(0.31, "Blizu"), self.Hit(0.52, "Daleko")]
+
+        self.assertEqual(narration.distances(hits, 0.45, self._named),
+                         "Blizu=0.310, Daleko=0.520 far")
+
+    def test_a_table_aligns_its_values_so_two_sizes_can_be_compared(self):
+        lines = narration.table([("page", "9,216 tok", "in part"),
+                                 ("question", "43 tok"),
+                                 narration.RULE,
+                                 ("total", "9,259 tok")]).splitlines()
+
+        self.assertEqual(lines[0], "    page      9,216 tok   in part")
+        self.assertEqual(lines[1], "    question     43 tok")
+        self.assertEqual(lines[2], "    " + "-" * len("question  9,216 tok"))
+        self.assertEqual(lines[3], "    total     9,259 tok")
+
+    def test_counts_are_written_out_rather_than_left_as_a_placeholder(self):
+        self.assertEqual(narration.plural(1, "tool call"), "1 tool call")
+        self.assertEqual(narration.plural(2, "tool call"), "2 tool calls")
+        self.assertEqual(narration.plural(1_500, "passage"), "1,500 passages")
 
 
 if __name__ == "__main__":

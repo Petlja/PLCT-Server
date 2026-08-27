@@ -4,7 +4,9 @@ import logging
 from dataclasses import dataclass
 from typing import Awaitable, Callable
 
+from ...knowledge.chunk_order import chunks_to_tokens
 from ...knowledge.course_db import CourseDB
+from .. import narration
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +22,8 @@ class PageContext:
     whole: bool
     used: int          # chunks included
     total: int         # chunks the page has
+    title: str = ""    # what to call it in the log
+    full_tokens: int = 0    # what the whole page would have cost, whether or not it fitted
 
 
 async def current_page(*, course_key: str, activity_key: str, query: str, source,
@@ -38,8 +42,12 @@ async def current_page(*, course_key: str, activity_key: str, query: str, source
         embedding = await embed(query)
         ids = [hit.id for hit in source.search(embedding, k=max_chunks, where={"$and": [
             {"course_key": course_key}, {"activity_key": activity_key}]})]
-        logger.info("current page has %d chunks -- searching it with the teacher's "
-                    "question, %d back", len(all_ids), len(ids))
+        logger.info("the page the teacher is on has %s -- too long to reproduce whole "
+                    "(~%s), so it was searched with their own question and the %s closest "
+                    "went into the prompt",
+                    narration.plural(len(all_ids), "section"),
+                    narration.tok(chunks_to_tokens(len(all_ids))),
+                    narration.plural(len(ids), "section"))
 
     runs = db.runs(ids)
     if not runs:
@@ -58,4 +66,6 @@ async def current_page(*, course_key: str, activity_key: str, query: str, source
         # The provenance record describes the page, so it is written once, not per run.
         evidence.deliver_run(run.order, run.text, record=record if n == 0 else None,
                              **labels)
-    return PageContext(text=text, whole=whole, used=used, total=len(all_ids))
+    return PageContext(text=text, whole=whole, used=used, total=len(all_ids),
+                       title=activity_title or lesson_title,
+                       full_tokens=chunks_to_tokens(len(all_ids)))

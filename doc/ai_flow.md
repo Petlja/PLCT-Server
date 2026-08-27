@@ -231,8 +231,9 @@ is the net.
 A vector search hands back its `k` nearest neighbours whether or not any of them answers the
 question, so without a cutoff no question can fail: one the corpus cannot answer comes back
 with the nearest unrelated pages, they are charged to the evidence budget, and they are
-charged *before* a question that could have been answered. Refused hits are still logged,
-marked `far`, because a threshold whose rejections are invisible cannot be recalibrated.
+charged *before* a question that could have been answered. Refused hits are still logged --
+counted at INFO (`fetched 5 passages, keeping 4 within 0.460 ...; 1 too far`) and listed hit
+by hit at DEBUG -- because a threshold whose rejections are invisible cannot be recalibrated.
 
 Every layer sets its own, because none of the scales transfer. The course layer is
 text-embedding-3-large under inner product over normalised vectors, so cosine distance:
@@ -369,10 +370,28 @@ from the same system message.
 { type: "done" }
 ```
 
-Progress stages are a closed set with Serbian labels in
-[`PROGRESS_MESSAGES`](../plct_server/endpoints/ui_api.py#L34) — now just `preparing_answer` and
-`retrieving`, the latter published once per tool round with the round's tools as `detail`.
-Publishing a stage that is not in the dict raises `KeyError`.
+Progress stages are a closed set. The engine owns it
+([`PROGRESS_STAGES`](../plct_server/ai/engine.py)) and the endpoint owns the Serbian wording
+([`PROGRESS_MESSAGES`](../plct_server/endpoints/ui_api.py)); a test holds the two to each
+other, and publishing a stage that is not in the dict raises `KeyError`. The stages are
+`reading_page`, `preparing_answer`, `retrieving`, `analyzing` and `writing` -- the middle
+three are the tool loop narrating itself, `retrieving` and `analyzing` once per round with
+the round's tools as `detail`, and `writing` when the first token of the answer arrives. A
+`retrieving` whose tools all have a phrase in `SEARCH_TARGETS` is announced by what it is
+searching ("Pretražujem materijal kursa i stručnu literaturu o nastavi...") rather than by
+the generic line; an unknown tool falls back to it.
+
+### 8.1 The pipeline log is a product surface
+
+With `debug_mode` on, `debug_stream` tees the pipeline's own log records into the answer
+stream and the SPA renders them beside the answer, so these lines are read by whoever is
+watching a question being answered rather than only by grep. `ai/narration.py` holds the
+shared wording -- token counts, hit outcomes, aligned budget tables, the numbered list of a
+call's questions -- and a record may span several lines, which the panel keeps intact and
+scrolls sideways rather than wrapping. Two of those blocks bracket a run: what the prompt
+was made of before the first request (`log_initial_context`, including whether the current
+page went in whole and what it would have cost if not), and what the finished answer cost
+(`log_total_budget`, the same rows plus what the tools sent back).
 
 There is **no `metadata` event**: condensed history and follow-up questions were both
 removed, so history round-trips raw and the suggestion chips fall back to their default set.

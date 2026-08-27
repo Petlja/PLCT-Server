@@ -36,11 +36,36 @@ class UiConfig(BaseModel):
     """What the SPA needs to know before it can draw itself."""
     debug_mode: bool
 
+# What the reader is told while they wait, one per stage the engine announces. A wire
+# contract: a stage with no message raises rather than streaming a blank one.
 PROGRESS_MESSAGES = {
+    "reading_page": "Čitam lekciju koju gledaš...",
     "preparing_answer": "Pripremam odgovor...",
     "retrieving": "Tražim relevantne delove sadržaja...",
+    "analyzing": "Analiziram pronađeno...",
+    "writing": "Pišem odgovor...",
 }
+
+# A search says what it is searching: the teacher knows all four places, so naming one
+# says something the generic message cannot.
+SEARCH_TARGETS = {
+    "search_course": "materijal kursa",
+    "search_current_page": "ostatak ove lekcije",
+    "consult_teaching_literature": "stručnu literaturu o nastavi",
+    "search_platform_docs": "uputstvo za petlja.org",
+}
+
 ERROR_MESSAGE = "Ima tehničkih problema sa pristupom OpenAI, malo sačekaj pa pokušaj ponovo"
+
+
+def progress_message(stage: str, detail: str | None) -> str:
+    """The line the reader sees. Raises on an unknown stage; a tool with no phrase in
+    `SEARCH_TARGETS` degrades to the generic line rather than breaking the stream."""
+    if stage == "retrieving" and detail:
+        targets = [SEARCH_TARGETS.get(name.strip()) for name in detail.split(",")]
+        if all(targets):
+            return "Pretražujem " + " i ".join(dict.fromkeys(targets)) + "..."
+    return PROGRESS_MESSAGES[stage]
 
 # The answer's own events are few and the consumer is a socket, so a short queue is
 # enough to keep the pipeline and the client in step. A debug run adds one event per log
@@ -68,10 +93,11 @@ async def stream_response(input: ChatInput) -> AsyncGenerator[bytes, None]:
         maxsize=DEBUG_QUEUE_SIZE if debug else QUEUE_SIZE)
 
     async def publish_progress(stage: str, detail: str | None = None) -> None:
-        message = PROGRESS_MESSAGES[stage]
+        message = progress_message(stage, detail)
         # Noted before it is sent, so the trace reads in the order things happened.
         # `note` is inert outside a capture, so this needs no test for debug mode.
-        debug_stream.note(f"progress -> {message}" + (f" [{detail}]" if detail else ""))
+        debug_stream.note(f"the teacher now sees: {message}"
+                          + (f" [{stage}: {detail}]" if detail else f" [{stage}]"))
         await event_queue.put({
             "type": "progress",
             "stage": stage,

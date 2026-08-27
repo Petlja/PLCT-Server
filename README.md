@@ -8,7 +8,7 @@ PLCT content is basically static HTML5, but some features of PLCT components may
 
 > **New here?** See the [Getting Started](doc/getting_started.md) guide for a complete, step-by-step walkthrough — from creating a deployment project to serving courses with an AI Assistant.
 
-> **Working on the internals?** [doc/ai_flow.md](doc/ai_flow.md) describes the runtime and the query path; [doc/plct_ai_ctx_relations.md](doc/plct_ai_ctx_relations.md) and [doc/ai_knowledge_tools_relations.md](doc/ai_knowledge_tools_relations.md) describe what the two upstream repositories hand this one.
+> **Working on the internals?** [AGENTS.md](AGENTS.md) is the entry point for coding agents. [doc/ai_flow.md](doc/ai_flow.md) describes the runtime and the query path; [doc/plct_ai_ctx_relations.md](doc/plct_ai_ctx_relations.md) and [doc/ai_knowledge_tools_relations.md](doc/ai_knowledge_tools_relations.md) describe what the two upstream repositories hand this one.
 
 ## Prerequisites
 
