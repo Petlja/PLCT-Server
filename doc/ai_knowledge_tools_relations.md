@@ -52,7 +52,7 @@ Two properties of the bundle are what make it worth consuming:
 | Loaded into | its own Chroma collection at whatever the manifest records — `text-embedding-3-small` @ 1536, **cosine**, for the reference bundle |
 | Mirrored to | `<knowledge_cache_dir>/<source-key>-<url-hash>/`; chunk `.md` read per hit |
 | Reached by | one tool per bundle — `consult_teaching_literature` for `Handbook-for-Teachers` |
-| Cutoffs | `max_chunk_distance` and `max_concept_distance`, both **0.46**; two populations, because a concept vector is a short name and sits nearer any question by construction |
+| Cutoffs | `max_chunk_distance` **0.50**, `max_concept_distance` **0.46**; two populations, because a concept vector is a short name and sits nearer any question by construction. Both await a calibration sweep -- doc/ai_flow.md section 7.3 |
 
 **A bundle is bound to its tool by `knowledge_unit`, the name its manifest declares.** AIKT
 prepares knowledge and does not describe it, so the tool name, description and citation label

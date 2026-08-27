@@ -6,9 +6,10 @@ model's attention -- so it is authored here, beside those siblings, and bound to
 the `knowledge_unit` its manifest declares. That name travels with the artifact, so renaming
 a source key in the server config cannot silently detach a tool from its knowledge.
 
-One bundle, one tool: a merged tool over several bundles would have to describe itself by
-listing what it holds, and a generated inventory is not a description a model routes on.
-When a second bundle arrives it gets its own entry below.
+One bundle, one tool: a tool stands on its own and says what it knows, so the authored
+prose is closed by the bundle's own concept names, read off the loaded records. A tool over
+several bundles could say what it holds only as a stack of those lists. When a second bundle
+arrives it gets its own entry below.
 """
 
 import logging
@@ -28,9 +29,10 @@ class Limits:
     chunk_k: int = 5                    # chunk hits per question
     concept_k: int = 3                  # ...and concepts, each expanding to its own chunks
     chunks_per_concept: int = 3
-    max_chunk_distance: float = 0.46
-    max_concept_distance: float = 0.46
-    max_chunks: int = 8
+    max_chunk_distance: float = 0.50    # deliberately loose; the cap bounds the cost
+    max_concept_distance: float = 0.50  # nearer everything by construction -- held
+    chunks_per_question: int = 3        # the cap scales with what was asked...
+    max_chunks: int = 18                # ...up to here
 
 
 @dataclass(frozen=True)
@@ -45,23 +47,32 @@ class BundleTool:
 TEACHING_LITERATURE = BundleTool(
     name="consult_teaching_literature",
     label="CO-CREATE handbook for teachers",
+    # What it is for, how to use it, and -- appended by `inventory()` -- what it knows.
+    # The subjects are not summarised here: the concept list below says them by name.
     description=(
         "Ask one or more questions about teaching practice and receive the passages of the "
-        "professional literature that answer them best. The literature here is a handbook "
-        "for secondary-school teachers, and it covers how students learn and differ "
-        "(multiple intelligences, learning styles, motivation, mindset, self-regulated "
-        "learning); how a lesson is planned, taught and evaluated (teaching methods, forms "
-        "of work, learning outcomes, formative and summative assessment, rubrics, "
-        "portfolios); how a class is run (classroom management, group and pair work, "
-        "collaborative problem solving); how to teach a mixed class (inclusive education, "
-        "gifted students, students with special educational needs); and the ethics of "
-        "using AI in education. Each call returns the passages closest to your questions "
-        "plus the passages covering the concepts they touch. "
+        "professional literature that answer them best: a handbook for secondary-school "
+        "teachers. Each call returns the passages closest to your questions plus the "
+        "passages covering the concepts they touch. "
         + questions_arg.SHARED_TAIL +
         " This literature is written in English: ask in English whatever language the "
         "teacher writes in."
     ),
 )
+
+
+def inventory(names: list[str]) -> str:
+    """The bundle naming itself, for the end of its tool's description.
+
+    Last, after everything the model has to act on: a description is read past, and no
+    instruction should sit behind a hundred nouns. Semicolons because a concept name may
+    carry a comma of its own.
+    """
+    if not names:
+        return ""
+    return ("\n\nThe concepts this literature names, in the order it treats them: "
+            + "; ".join(names) + ".")
+
 
 # knowledge_unit, as the bundle's manifest declares it -> what this server offers it as.
 BUNDLE_TOOLS: dict[str, BundleTool] = {
@@ -99,7 +110,8 @@ class BundleSearchTool:
         self.embed = embed
         self.evidence = evidence
         self.limits = limits or Limits()
-        self.definition = questions_arg.definition(self.name, offering.description)
+        self.definition = questions_arg.definition(
+            self.name, offering.description + inventory(source.concept_names))
 
     def _log_question(self, position: int, total: int, question: str,
                       chunk_hits: list, concept_hits: list) -> None:
@@ -156,6 +168,7 @@ class BundleSearchTool:
 
         direct: dict[str, float] = {}       # chunk id -> the best question hit it took
         by_concept: dict[str, float] = {}   # ...and, for a chunk a concept led to, its own
+        nearest: list[str] = []             # each question's closest chunk, in ask order
         matched: list[str] = []
         unanswered: list[str] = []          # questions nothing was near enough to answer
 
@@ -190,7 +203,16 @@ class BundleSearchTool:
                         hit.id, [])[:self.limits.chunks_per_concept]:
                     keep(by_concept, chunk_id, hit.distance)
 
-            if not near and not concepts:
+            # Closest by distance, not first back: ranking is this tool's job, not the
+            # index's, and a chunk hit outranks a concept-led one whatever their numbers.
+            if near:
+                nearest.append(min(near, key=lambda hit: hit.distance).id)
+            elif concepts:
+                closest = min(concepts, key=lambda hit: hit.distance)
+                led = self.source.concept_chunks.get(closest.id, [])
+                if led:
+                    nearest.append(led[0])
+            else:
                 unanswered.append(question)
 
         # Two tiers, each ranked within itself, and the cap taken off the top. Not one
@@ -200,10 +222,12 @@ class BundleSearchTool:
         ranked += [i for i in sorted(by_concept, key=by_concept.__getitem__)
                    if i not in direct]
 
+        cap = min(self.limits.chunks_per_question * len(questions),
+                  self.limits.max_chunks)
         before = self.evidence.tokens
-        passages, known = self._deliver(ranked[:self.limits.max_chunks])
+        passages, known = self._deliver(self._fill(cap, nearest, ranked))
         self._log_call(questions, passages, known, matched,
-                       left_behind=max(0, len(ranked) - self.limits.max_chunks),
+                       left_behind=max(0, len(ranked) - cap),
                        spent=self.evidence.tokens - before)
         result: dict[str, Any] = {"passages": passages}
         if matched:
@@ -215,8 +239,8 @@ class BundleSearchTool:
         if known:
             notes.append(f"{known} matching passage(s) were already given to you earlier in "
                          "this answer, and are not repeated here.")
-        if len(ranked) > self.limits.max_chunks:
-            notes.append(f"{len(ranked) - self.limits.max_chunks} further passage(s) also "
+        if len(ranked) > cap:
+            notes.append(f"{len(ranked) - cap} further passage(s) also "
                          "matched, less closely, and were not included. Ask a narrower "
                          "question if you need them.")
         if self.evidence.exhausted:
@@ -225,6 +249,19 @@ class BundleSearchTool:
         if notes:
             result["note"] = " ".join(notes)
         return result
+
+    @staticmethod
+    def _fill(cap: int, nearest: list[str], ranked: list[str]) -> list[str]:
+        """The cap filled: one slot per question first, the rest by distance.
+
+        The floor is one rather than a share. Its job is that no question the model asked
+        is erased without trace -- a facet whose material was found and then dropped leaves
+        a hole nothing reports, and one passage is enough for the model to know the facet
+        has material. Past that the questions are not equally answerable by this bundle, so
+        distance decides rather than fairness.
+        """
+        taken = list(dict.fromkeys(nearest))[:cap]
+        return taken + [i for i in ranked if i not in taken][:cap - len(taken)]
 
     def _deliver(self, wanted: list[str]) -> "tuple[list[dict[str, Any]], int]":
         """Merge runs of consecutive ordinals, then hand them to the ledger.

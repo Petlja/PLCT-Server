@@ -169,6 +169,7 @@ class StoreTests(KnowledgeFixture):
         handbook = store.source("handbook")
         self.assertEqual(handbook.concept_chunks["concept:1"],
                          ["Test-Unit:0001", "Test-Unit:0002"])
+        self.assertEqual(handbook.concept_names, ["Formative assessment"])
 
     def test_unknown_source_names_what_is_loaded(self):
         store = self.build()

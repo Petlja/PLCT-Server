@@ -801,6 +801,7 @@ class FakeBundleSource:
                         for n, chunk_id in enumerate(chunks, start=1)}
         self.records.update({c: {"name": c} for c in (concepts or {})})
         self.concept_chunks = dict(concepts or {})
+        self.concept_names = list(concepts or {})
         self.chunk_hits = [BundleHit(i, 0.3, self.records[i]) for i in chunks]
         self.concept_hits = [BundleHit(c, 0.4, self.records[c]) for c in (concepts or {})]
 
@@ -854,6 +855,18 @@ class BundleSearchToolTests(unittest.IsolatedAsyncioTestCase):
                          ["prvi\n\ndrugi", "cetvrti"])
         self.assertEqual(result["passages"][0]["source"],
                          knowledge_tools.TEACHING_LITERATURE.label)
+
+    def test_the_offered_description_names_the_bundles_concepts(self):
+        """A tool stands on its own: what it holds is in what the model reads."""
+        source = FakeBundleSource({"a": "prvi"},
+                                  concepts={"Assessment Rubrics": ["a"],
+                                            "Self-Regulated Learning": ["a"]})
+
+        description = self._tool(source).definition["function"]["description"]
+
+        self.assertIn(knowledge_tools.TEACHING_LITERATURE.description, description)
+        self.assertTrue(description.endswith(
+            "Assessment Rubrics; Self-Regulated Learning."), description[-80:])
 
     async def test_a_matched_concept_pulls_its_chunks_and_is_named_back(self):
         source = FakeBundleSource({"a": "prvi"}, concepts={"Assessment Rubrics": ["a"]})
@@ -914,6 +927,37 @@ class BundleSearchToolTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual([p["text"] for p in result["passages"]], ["prvi", "drugi"])
         self.assertIn("1 further passage(s)", result["note"])
+
+    async def test_every_question_that_found_material_keeps_a_slot(self):
+        """One question matching broadly must not erase another's material without trace."""
+        source = FakeBundleSource({"a": "prvi", "b": "drugi", "c": "treci", "d": "cetvrti"})
+        for n, chunk_id in enumerate("abcd"):
+            source.records[chunk_id]["ordinal"] = 1 + 2 * n     # gaps, so no run merging
+        asked = iter([[BundleHit("a", 0.30, source.records["a"]),
+                       BundleHit("b", 0.32, source.records["b"]),
+                       BundleHit("c", 0.34, source.records["c"])],
+                      [BundleHit("d", 0.45, source.records["d"])]])
+        source.search = lambda embedding, *, k, where: (
+            next(asked) if where["kind"] == "chunk" else [])
+        tool = self._tool(source, chunks_per_question=1)
+
+        result = await tool.run({"questions": ["mindset?", "rubrics?"]})
+
+        # Ranked alone the second question loses both slots to the first and says nothing.
+        self.assertEqual([p["text"] for p in result["passages"]], ["prvi", "cetvrti"])
+
+    async def test_the_cap_grows_with_the_questions_asked(self):
+        """The prompt asks for batched questions; a flat cap charges for obeying it."""
+        source = FakeBundleSource({"a": "prvi", "b": "drugi", "c": "treci"})
+        for n, chunk_id in enumerate("abc"):
+            source.records[chunk_id]["ordinal"] = 1 + 2 * n
+
+        one = await self._tool(source, chunks_per_question=1).run({"questions": ["one"]})
+        three = await self._tool(source, chunks_per_question=1).run(
+            {"questions": ["one", "two", "three"]})
+
+        self.assertEqual(len(one["passages"]), 1)
+        self.assertEqual(len(three["passages"]), 3)
 
     async def test_a_chunk_the_question_hit_outranks_one_a_concept_led_to(self):
         """Concept distances run lower by construction; one ranking would invert these."""

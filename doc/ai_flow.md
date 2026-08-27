@@ -170,7 +170,7 @@ the page in the prompt already covers costs one request, and one needing evidenc
 ### 7.1 The frame: the page the teacher is on
 
 **The page the teacher is on goes into the prompt as text, not as its summary**
-([`current_page`](../plct_server/ai/tools/course_tools.py)). Up to `CONTEXT_MAX_CHUNKS` (3) it
+([`current_page`](../plct_server/ai/tools/page_context.py)). Up to `CONTEXT_MAX_CHUNKS` (3) it
 goes in whole, which needs no embedding at all — 95% of pages. A longer page is searched
 with the teacher's own question — with any command already lifted out of it, see 7.2 — for
 the same number of chunks, runs that turn out to be
@@ -198,7 +198,7 @@ description states its own coverage.
 | --- | --- | --- |
 | `search_course` | the course the teacher is in, **minus the page they are on** | `k=6` per question, cut off at `max_distance`; at most 5 activities per call, ranked by best distance — see 7.4 |
 | `search_current_page` | the page the teacher is on, and only when the prompt could not carry it whole | same class, `only_activity` instead of `exclude_activity`, `k=3`, **no distance cutoff** — see 7.4 |
-| `consult_teaching_literature` | the `Handbook-for-Teachers` bundle | one tool per bundle, `k=5` chunks + 3 concepts per question (one vector, two filtered searches), each concept expanding to its 3 best-ranked chunks; each kind cut off at its own distance, then the call capped at `max_chunks` (8) in rank order |
+| `consult_teaching_literature` | the `Handbook-for-Teachers` bundle | one tool per bundle, `k=5` chunks + 3 concepts per question (one vector, two filtered searches), each concept expanding to its 3 best-ranked chunks; each kind cut off at its own distance, then the call capped at `max_chunks` calculated as 3 times the number of questions up to 18.
 | `search_platform_docs` | `course_key = "petlja-docs"` | same class as `search_course`, different course and description |
 
 **A bundle's tool is bound to it by `knowledge_unit`**, the name its manifest declares —
@@ -211,21 +211,26 @@ the config's source key means renaming a source cannot silently detach a tool fr
 knowledge, and a loaded bundle that no tool offers **raises at startup**: indexed but
 unreachable is the one failure nothing at runtime would report.
 
-One bundle, one tool. A merged tool over several bundles has to describe itself by listing
-what it holds, and a generated inventory is not a description a model routes on — the
-earlier `query_knowledge_base` spelled out all 146 concept names, 942 tokens of nouns, and
-that list is what the tool-ordering fix below was working around. The prose description that
-replaced it is 206 tokens, in the same range as its two siblings (86 and 115).
+One bundle, one tool, and the tool says what it knows. The authored prose says what the
+tool is for and how to use it (98 tokens, in the range of its two siblings at 86 and 115)
+and is closed by the bundle's own concept names, read off the loaded records at build time —
+`BundleSource.concept_names`, in the order the literature treats them, appended by
+`inventory()`. For this handbook that is 146 names and 934 tokens of description. The prose
+no longer summarises the subjects: the list says them by name, and paying twice for the same
+nouns is what made the earlier description long. The names go **last**, after everything the
+model has to act on: a description is read past, and no instruction should sit behind a
+hundred nouns. A merged tool over several bundles could say what it holds only as a stack of
+these lists, which is why there is one tool per bundle rather than one over all of them.
 
 Tool order and wording are both load-bearing, and both were found by measurement rather than
 reasoning. The platform description once said "assignments and grading" and disclaimed
 teaching practice in a negative sentence; the model read the noun, ignored the negation, and
 sent every question about assessment to the platform docs. And with the literature tool
 offered last, behind a description carrying a long concept list, the model reached for the
-nearer tool instead of reading past it. Pedagogy is now offered before the platform docs, and
-the platform description mentions neither assessment nor grading. The concept list is gone
-too, so that second finding is worth re-measuring rather than assuming — `plct-batch-review`
-is the net.
+nearer tool instead of reading past it. Pedagogy is now offered before the platform
+docs, and the platform description mentions neither assessment nor grading. The concept list
+is back, in its own paragraph after everything else the description says — so that second
+finding is worth re-measuring rather than assuming, and `plct-batch-review` is the net.
 
 #### The teacher can require a source
 
@@ -271,35 +276,102 @@ writes Serbian, so a server-side search on the raw question would cross that gap
 reformulation. A command whose tool this request does not offer — no bundle loaded, a model
 configured without tools — is logged and dropped, never raised.
 
+#### When the handbook is silent
+
+The rules oblige the model to ask the literature about any claim on teaching practice, and
+knowing the answer already is explicitly not a reason to skip the search. What happens
+*after* a search comes back empty differs by body of knowledge, and the difference is the
+product decision: what **this course** says is a fact about one specific text, so an absence
+there is named plainly and never filled in, while pedagogy is a field the model knows — a
+teacher who asks a real question is answered from that knowledge rather than declined.
+
+The seam is carried by the writing, not announced: what the literature says is attributed to
+it, the rest is said in the model's own voice, and what the sources do or do not cover is
+never reported to the teacher.
+
+Both halves are load-bearing, and both were found by measurement rather than reasoning. The
+fallback has to read as something reached *after* a search — written without that guard, twice,
+it was taken as permission not to search at all, and a full run answered from the page in zero
+tool rounds. And with any general licence to name a boundary left standing, the answer closes
+on a note about what its sources cover, quoting the retrieval back at the teacher. `too_far`
+is written to match: it steers a reword, and says the note itself is not for the teacher.
+
 ### 7.3 Cutoffs: a hit past the threshold is not returned at all
 
 A vector search hands back its `k` nearest neighbours whether or not any of them answers the
 question, so without a cutoff no question can fail: one the corpus cannot answer comes back
 with the nearest unrelated pages, they are charged to the evidence budget, and they are
 charged *before* a question that could have been answered. Refused hits are still logged --
-counted at INFO (`fetched 5 passages, keeping 4 within 0.460 ...; 1 too far`) and listed hit
+counted at INFO (`fetched 5 passages, keeping 4 within 0.500 ...; 1 too far`) and listed hit
 by hit at DEBUG -- because a threshold whose rejections are invisible cannot be recalibrated.
 
 Every layer sets its own, because none of the scales transfer. The course layer is
 text-embedding-3-large under inner product over normalised vectors, so cosine distance:
-answers land under ~0.42, noise from ~0.47, `max_distance` **0.45**. The handbook bundle is
+answers land under ~0.42, noise from ~0.47, `max_distance` **0.45** — the one cutoff here
+measured against its own corpus rather than reasoned to. The handbook bundle is
 text-embedding-3-small, and within it a chunk hit and a concept hit are two more populations
 — a concept vector is a short name, so it sits nearer any question by construction — hence
-`max_chunk_distance` and `max_concept_distance`, both **0.46**. `search_current_page` is the
-one tool with no cutoff at all: it searches a single named page the model asked for by
-calling it, so relevance there is where the teacher is standing, not a distance (7.4).
+`max_chunk_distance` **0.50** and `max_concept_distance` **0.46**, which no longer move
+together. `search_current_page` is the one tool with no cutoff at all: it searches a single
+named page the model asked for by calling it, so relevance there is where the teacher is
+standing, not a distance (7.4).
+
+**The handbook cutoff is deliberately loose, and no longer decides what a call costs.** Once
+the cap ranks by distance and takes off the top, a chunk a looser cutoff admits reaches the
+model only when the budget was not full anyway — it can never displace a better one, and the
+call is bounded by the cap wherever the line sits. What the cutoff decides is whether a
+question is answered from the corpus or from the model's own knowledge (7.2), where an empty
+result is a good outcome. So the failure a loose cutoff buys is not a fatter context but a
+*false* grounding: a marginal passage the model prefers over knowledge it already has, and
+attributes to the handbook. That failure needs distance, and 0.46 was nowhere near it —
+chunk #82 on assessment came back at **0.453** for one wording and **0.477** for a paraphrase
+of the same question, kept and refused for nothing but the wording. 0.50 clears the highest
+observed good hit by about the width of that wobble.
+
+**The concept cutoff was held at 0.46 on purpose.** Its distances are compressed toward
+everything by construction, so the same absolute step is a much larger relative one; each
+admitted concept expands to three chunks; and those chunks land in the second tier, which is
+what the cap trims first. Most of a loosening there would buy nothing, while the part that
+landed is what rescues a question out of `unanswered` and into a guaranteed slot — the
+false-grounding case exactly.
+
+Both handbook numbers are placeholders pending a **sweep**: real teacher questions replayed
+at several thresholds and judged on delivered material rather than on counts, the two
+populations judged separately. The DEBUG lines above are what such a sweep reads. Worth
+testing there too — a *relative* band, keeping what is within some Δ of this question's own
+best hit under an absolute ceiling, since the wobble that motivated 0.50 was a per-question
+offset an absolute line cannot see. `search_platform_docs` belongs in the same sweep: it
+borrows `search_course`'s 0.45, measured on subject-matter courses and applied to UI
+documentation.
 
 **The literature call is then capped and ranked.** Five questions at `chunk_k=5`, each
 expanding three concepts into three chunks, reach for 70 of the handbook's 122 chunks — one
 observed call delivered ~25,000 tokens, 40% of the 62k-token corpus, and still overflowed the
 budget twice. Worse, `_deliver` merges runs by ordinal, so *which* material the budget refused
 was decided by document position rather than by relevance. Now the surviving hits are ranked
-and `max_chunks` (8) taken off the top: direct hits by chunk distance first, chunks a matched
+and the cap taken off the top: direct hits by chunk distance first, chunks a matched
 concept led to after, as two tiers rather than one merged ranking — the distances are not
 comparable across kinds, and a chunk the question hit outright is the better evidence. On the
-call above that is 8 chunks and ~4,000 tokens where it was ~49 and ~25,000, and the cutoff
+call above that is ~15 chunks and ~7,600 tokens where it was ~49 and ~25,000, and the cutoff
 alone accounts for 12,163 tokens of refused text. What the cap trims is the tail of the
 concept tier, which is the weakest evidence in the call by construction.
+
+**The cap scales with the questions asked, and every question keeps one slot.** It was a flat
+8, which is the wrong shape: `SHARED_TAIL` tells the model to send its questions together, so
+the better it obeys the less each question gets — six questions at a cap of 8 is 1.3 chunks
+each. One observed call asked six questions about distance learning, found ten chunks inside
+the cutoff and delivered eight; the two that fell were the whole of the assessment question,
+so the answer had no assessment in it, while 83% of the evidence budget went unspent. The cap
+is now `chunks_per_question` (3) per question up to `max_chunks` (18), filled in two passes —
+each question's closest chunk first, the remaining slots by distance across both tiers.
+
+The floor is **one**, not a share. Its job is that no question the model asked is erased
+without trace: a facet whose material was found and then dropped leaves a hole nothing
+reports, and one passage is enough for the model to know the facet has material. Past that the
+questions are not equally answerable by this bundle, so distance is the better judge than
+fairness. At 3× the questions the cap rarely binds at all — the call above would have kept all
+thirteen of its ranked chunks — and the floor is insurance for the case where one broad
+question would otherwise take the call.
 
 A question whose every hit was refused is **named back to the model** — not "nothing matched",
 but which of the questions it just sent found nothing, so it rewords that one instead of
@@ -388,7 +460,7 @@ and a whole page tops out at ~13,900 tokens:
 ### 7.6 The evidence ledger
 
 A single per-request ledger ([tools/evidence.py](../plct_server/ai/tools/evidence.py)) is
-shared by all three tools: text is deduplicated and bounded by a token budget across every
+shared by every search tool: text is deduplicated and bounded by a token budget across every
 call, which is what stops a loop from filling its own context. Recoverable problems — empty
 retrieval, spent budget, an already-delivered passage — are returned as tool data, never
 raised.
@@ -403,8 +475,9 @@ from the same system message.
 
 ## 8. API surfaces
 
-**`/api/chat`** — [ui_api.py](../plct_server/endpoints/ui_api.py). POST, no auth, returns
-`application/x-ndjson`. One JSON object per line, produced by a background task feeding an
+**`/api/chat`** — [ui_api.py](../plct_server/endpoints/ui_api.py). POST behind
+`require_auth` (section 2), returns `application/x-ndjson`; the matching GET is the SPA's
+readiness probe, carrying the same dependency so a 200 means the caller may actually ask. One JSON object per line, produced by a background task feeding an
 `asyncio.Queue`. The event union is mirrored in the front-end at
 [chatStream.ts:1](../front-app/src/chatStream.ts#L1):
 

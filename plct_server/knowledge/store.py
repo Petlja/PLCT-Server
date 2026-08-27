@@ -198,6 +198,7 @@ class BundleSource(KnowledgeSource):
         self.knowledge_unit = self.manifest.get("knowledge_unit") or spec.key
         self.records: dict[str, dict] = {}          # record_id -> full metadata
         self.concept_chunks: dict[str, list[str]] = {}
+        self.concept_names: list[str] = []          # in bundle order -- its tool says them
 
     def _records_file(self) -> Path:
         return self.root / str(self.manifest.get("records_file") or "records.jsonl")
@@ -221,6 +222,7 @@ class BundleSource(KnowledgeSource):
         embeddings: list[list[float]] = []
         metadatas: list[dict] = []
         assignments: dict[str, list[tuple[float, int, str]]] = {}
+        concept_names: list[str] = []
         batch = client.get_max_batch_size()
 
         def flush() -> None:
@@ -257,6 +259,8 @@ class BundleSource(KnowledgeSource):
                         confidence = 0.0
                     assignments.setdefault(concept_id, []).append(
                         (float(confidence), flat["ordinal"], record_id))
+            elif flat["title"]:
+                concept_names.append(flat["title"])
 
             ids.append(record_id)
             embeddings.append(embedding)
@@ -269,6 +273,7 @@ class BundleSource(KnowledgeSource):
         self.concept_chunks = {
             concept_id: [rid for _, _, rid in sorted(entries, key=lambda e: (-e[0], e[1]))]
             for concept_id, entries in assignments.items()}
+        self.concept_names = concept_names
 
         kinds: dict[str, int] = {}
         for metadata in self.records.values():
