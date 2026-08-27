@@ -10,3 +10,7 @@ knowledge_sources:
     url: "aikt-context"
 
 knowledge_cache_dir: ".cache/knowledge"
+
+# Stream what the AI pipeline logs to the chat client, where a toggle shows it next to
+# the answer. Add `verbose: true` for the DEBUG detail as well.
+debug_mode: false

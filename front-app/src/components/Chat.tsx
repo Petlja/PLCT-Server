@@ -15,6 +15,7 @@ import { AppContext } from "../AppContext";
 import  ChatSampleQuestions from "./ChatSampleQuestions";
 import { useSearchParams } from 'react-router';
 import { readChatEvents } from "../chatStream";
+import { DebugLine, DebugPanel, appendDebug } from "./DebugPanel";
 import "./Chat.css";
 
 const welcomeMessage: MessageModel = {
@@ -46,6 +47,13 @@ export function Chat() {
     const [model, setModel] = useState<string>("");
     const [modelList, setModelList] = useState<{name: string; display_name: string}[]>([]);
     const [questions, setQuestions] = useState<string[]>(defaultQuestions);
+    // Whether this server streams its pipeline log at all, and whether the reader
+    // wants to see it. Only the second is the reader's to remember.
+    const [debugAvailable, setDebugAvailable] = useState(false);
+    const [showDebug, setShowDebug] = useState(localStorage.getItem('plct_showDebug') === '1');
+    // Kept across questions: comparing one run against the last is most of what the
+    // log is for. It is cleared by the button, or when the chat itself is reset.
+    const [debugLines, setDebugLines] = useState<DebugLine[]>([]);
 
     async function handleCourseChange() {
         localStorage.setItem('plct_courseKey', courseKey);
@@ -105,6 +113,7 @@ export function Chat() {
             setMessages([welcomeMessage])
             setHistory([])
             setQuestions(defaultQuestions)
+            setDebugLines([])
         }
     }, [activitiyKey]);
 
@@ -139,6 +148,8 @@ export function Chat() {
         setAnswering(true);
         setProgressMessage("Šaljem pitanje...");
         setQuestions([]);
+        setDebugLines(previous =>
+            appendDebug(previous, { type: "question", text: textContent }));
 
         const outMessage: MessageModel = {
             direction: "outgoing",
@@ -170,6 +181,11 @@ export function Chat() {
                         setMessages([...messages, outMessage, inMessage]);
                         break;
                     }
+                    case "debug":
+                        // Appended functionally: records arrive while the answer above
+                        // is still being reassembled from this same closure.
+                        setDebugLines(previous => appendDebug(previous, event));
+                        break;
                     case "error":
                         throw new Error(event.message);
                     case "done":
@@ -218,6 +234,17 @@ export function Chat() {
                 const match = savedCourse && courses.find((c: {course_key: string}) => c.course_key === savedCourse);
                 setCourseKey(match ? savedCourse : courses[0].course_key);
             }
+
+            const r_config = await fetch(
+                "../api/ui-config",
+                {
+                    method: 'GET',
+                    headers: {
+                        "Accept": "application/json"
+                    }
+                });
+            const uiConfig = await r_config.json()
+            setDebugAvailable(!!uiConfig.debug_mode);
 
             const r_models = await fetch(
                 "../api/models",
@@ -269,6 +296,19 @@ export function Chat() {
                     {modelList.map((m, i) => <option key={i} value={m.name}>{m.display_name}</option>)}
                 </select>
                 <br />
+                {debugAvailable && (
+                    <label className="debug-toggle">
+                        <input
+                            type="checkbox"
+                            checked={showDebug}
+                            onChange={(e) => {
+                                setShowDebug(e.target.checked);
+                                localStorage.setItem('plct_showDebug', e.target.checked ? '1' : '0');
+                            }}
+                        />
+                        Prikaži dnevnik obrade
+                    </label>
+                )}
                 <MainContainer responsive>
                     <ChatContainer>
                         <MessageList
@@ -290,6 +330,8 @@ export function Chat() {
                         />
                     </ChatContainer>
                 </MainContainer>
+                {debugAvailable && showDebug &&
+                    <DebugPanel lines={debugLines} onClear={() => setDebugLines([])} />}
                 <br />
                 <div className="follow-up-questions">
                 {questions.map((question, index) => (

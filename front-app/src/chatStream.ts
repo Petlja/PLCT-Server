@@ -1,6 +1,15 @@
+export type DebugEvent = {
+    type: "debug";
+    level: string;
+    source: string;
+    message: string;
+    elapsed: number;
+};
+
 export type ChatEvent =
     | { type: "progress"; stage: string; message: string; detail?: string }
     | { type: "content"; text: string }
+    | DebugEvent
     | { type: "error"; message: string }
     | { type: "done" };
 

@@ -59,6 +59,12 @@ class ConfigOptions(BaseSettings):
     # small group. Unset means no gate, which is the normal deployment.
     ui_password: str | None = None
 
+    # Tee what the AI pipeline logs into the answer stream, so the UI can offer a toggle
+    # that shows how an answer was put together. Records are captured at the level the
+    # loggers already pass, so `verbose: true` adds the DEBUG detail on top. Off in a
+    # normal deployment: the trace says which content the retrieval found.
+    debug_mode: bool = False
+
 class ServerContent:
 
     config_options: ConfigOptions
@@ -186,6 +192,9 @@ def load_config(*, course_urls: tuple[str] = None, config_file: str = None, verb
         logger.warning("'api_key' is not set: '/api/chat' is open to anyone who can reach it")
     if conf.ui_password:
         logger.info("HTTP Basic gate is on: every path needs 'ui_password'")
+    if conf.debug_mode:
+        logger.info("'debug_mode' is on: '/api/chat' streams the pipeline log to the "
+                    "client, which may show retrieved content to whoever is asking")
     logger.debug(f"ConfigOptions: {conf}")
     return conf
 

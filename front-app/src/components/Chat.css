@@ -12,3 +12,94 @@
   .follow-up-questions p:hover {
     font-weight: 700;
   }
+.debug-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.25rem 0 0.75rem;
+  font-size: small;
+  cursor: pointer;
+}
+
+.debug-panel {
+  margin-top: 0.75rem;
+  border: 1px solid #d1dbe3;
+  background: #f7f9fb;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+/* Outside the scrolling area, so "Obriši" stays reachable however long the log gets. */
+.debug-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid #d1dbe3;
+  font-weight: 700;
+  color: #4a5b6a;
+}
+
+.debug-lines {
+  padding: 0.5rem;
+  max-height: 20rem;
+  overflow-y: auto;
+}
+
+/* Where one run ends and the next begins: `elapsed` counts from zero again below it. */
+.debug-question {
+  margin: 0.6rem 0 0.3rem;
+  padding: 0.2rem 0.4rem;
+  background: #e6edf3;
+  color: #29455e;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.debug-lines > .debug-question:first-child {
+  margin-top: 0;
+}
+
+.debug-empty {
+  margin: 0;
+  color: #6b7a88;
+}
+
+.debug-line {
+  display: grid;
+  grid-template-columns: 3.5rem 9rem 1fr;
+  gap: 0.5rem;
+  padding: 0.1rem 0;
+  border-bottom: 1px solid #eaeff3;
+}
+
+.debug-elapsed {
+  color: #6b7a88;
+  text-align: right;
+}
+
+.debug-source {
+  color: #3b6ea5;
+  overflow-wrap: anywhere;
+}
+
+/* The message is the only part worth reading in full, so it keeps the server's own
+   line breaks and wraps rather than scrolling the panel sideways. */
+.debug-message {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* What the reader was shown, as opposed to what the pipeline did. */
+.debug-ui .debug-source,
+.debug-ui .debug-message {
+  color: #2f6b4f;
+  font-style: italic;
+}
+
+.debug-warning .debug-message { color: #8a5a00; }
+.debug-error .debug-message,
+.debug-critical .debug-message { color: #a32222; }
+.debug-debug { color: #6b7a88; }
