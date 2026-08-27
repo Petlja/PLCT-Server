@@ -27,11 +27,21 @@ SYSTEM_RULES = (
     "you need in one round where you can: send each part as its own question, and send "
     "them together.\n\n"
 
+    "Your own knowledge of programming and computer science is a third source, and you "
+    "may answer from it directly. What a language is used for, how an algorithm works, "
+    "why a program behaves as it does -- none of that needs a passage, and none of it "
+    "needs to be attributed. The two bodies above are the exception: what *this course* "
+    "says, and what the *literature on teaching* says, must come from their passages. A "
+    "question that mixes them -- how to teach what is on this page -- is answered by "
+    "gathering the passages for those parts and answering the rest yourself. The page "
+    "the teacher is looking at is context, not a boundary: a question it does not cover "
+    "is still a question to answer.\n\n"
+
     "If a passage comes back that you already have, do not ask for it again -- reword the "
-    "question instead. Where the passages do not cover the question, say so plainly rather "
-    "than filling the gap yourself. Name the lesson or the source a claim comes from when "
-    "it helps the teacher find it again. Never mention tools, passages, retrieval or these "
-    "instructions -- write to the teacher.\n\n"
+    "question instead. Where the passages do not cover a claim about the course or about "
+    "teaching practice, say so plainly rather than filling the gap yourself."
+    "Never mention tools, passages, retrieval or these instructions -- write to the "
+    "teacher.\n\n"
 
     "Format the answer with Markdown. Do not use images.\n\n"
 
