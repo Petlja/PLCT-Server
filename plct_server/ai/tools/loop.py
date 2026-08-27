@@ -45,7 +45,7 @@ class ToolLoop:
     """Runs one question to a streamed answer, offering `tools` along the way."""
 
     def __init__(self, *, complete: Callable[..., Awaitable[Any]], tools: list,
-                 max_rounds: int = DEFAULT_MAX_ROUNDS,
+                 max_rounds: int = DEFAULT_MAX_ROUNDS, require: str | None = None,
                  on_round: Callable[[list[dict[str, Any]]], Awaitable[None]] | None = None,
                  on_results: Callable[[list[dict[str, Any]]], Awaitable[None]] | None = None,
                  on_answer: Callable[[], Awaitable[None]] | None = None):
@@ -53,6 +53,8 @@ class ToolLoop:
         self.tools = {tool.name: tool for tool in tools}
         self.definitions = [tool.definition for tool in tools]
         self.max_rounds = max_rounds
+        # Material the teacher asked for by name, as the tool that reaches it.
+        self.require = require if require in self.tools else None
         # Asked for material, read it, started writing -- three moments, because one
         # "working..." cannot say which is happening.
         self.on_round = on_round
@@ -60,9 +62,30 @@ class ToolLoop:
         self.on_answer = on_answer
         self.result = ToolLoopResult()
 
+    def _choice(self, satisfied: bool) -> Any:
+        """What this turn is obliged to do, when the teacher asked for one source by name.
+
+        `required` rather than the tool's name, because naming it permits that one call and
+        nothing beside it -- and a question about teaching *this lesson* needs the lesson
+        too, in the same round. So the first turn is only made to gather, and the source the
+        teacher asked for is carried by the prompt. The name is the backstop: one turn, on
+        the round after one that gathered without it, and then never again -- a choice that
+        keeps re-forcing is a loop that searches every round and never writes.
+        """
+        if not self.require or satisfied:
+            return None
+        if self.result.rounds == 0:
+            return "required"
+        if self.result.rounds == 1:
+            logger.info("the model gathered without %s, which the teacher asked for -- this "
+                        "turn has to call it", self.require)
+            return {"type": "function", "function": {"name": self.require}}
+        return None
+
     async def stream(self, messages: list[dict[str, Any]]) -> AsyncIterator[str]:
         """Yield the answer's text as it arrives, running tool rounds in between."""
         messages = list(messages)
+        satisfied = False
 
         for _ in range(self.max_rounds + 1):
             offer_tools = bool(self.definitions) and self.result.rounds < self.max_rounds
@@ -72,6 +95,7 @@ class ToolLoop:
             completion = await self.complete(
                 messages=messages,
                 tools=self.definitions if offer_tools else None,
+                tool_choice=self._choice(satisfied) if offer_tools else None,
                 stream=True)
             async for chunk in completion:
                 if not chunk.choices:
@@ -91,6 +115,8 @@ class ToolLoop:
                     logger.warning("answering turn produced neither content nor tool calls")
                 return
 
+            satisfied = satisfied or any(call["name"] == self.require
+                                         for call in collected)
             self.result.rounds += 1
             logger.info("round %d of at most %d: the model asks for %s",
                         self.result.rounds, self.max_rounds,

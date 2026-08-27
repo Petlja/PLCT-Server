@@ -38,6 +38,8 @@ Tests are offline: no API key, no network, no live model calls. Keep them that w
 - `plct_server/ai/tools/loop.py` — the tool loop: rounds, call reassembly, progress hooks.
 - `plct_server/ai/tools/course_tools.py`, `knowledge_tools.py` — the search tools, their
   descriptions (prompt engineering, authored here) and their cutoffs.
+- `plct_server/ai/tools/commands.py` — what a teacher can require of an answer by writing
+  `/teaching` in the question, and the table that binds a command to a tool.
 - `plct_server/ai/tools/evidence.py` — the per-request ledger: dedupe once, budget once.
 - `plct_server/ai/narration.py` — how the pipeline words itself in the log.
 - `plct_server/ai/debug_stream.py` — tees the pipeline log into the answer stream.

@@ -50,6 +50,18 @@ SYSTEM_RULES = (
     "{scope}\n"
 )
 
+# Last part of the system message, and only when the teacher has asked for one body of
+# knowledge in particular. It names the material, never the tool that reaches it: the
+# request already forces that call, and a tool name here turns a question about teaching
+# into a question about which tool to call.
+REQUIRED_SOURCE = (
+    "# What this answer needs\n\n"
+    "The teacher has said they want this answer built on {source}. Gather it before you "
+    "write, and let it carry the answer rather than trailing it as an aside -- their "
+    "question is what to look for in it. Anything else the answer needs, gather in the "
+    "same round, alongside it.\n"
+)
+
 SCRIPT_INSTRUCTION = (
     "The teacher's question is written in {script} script. Answer in the same language as "
     "the question, and in the same script."

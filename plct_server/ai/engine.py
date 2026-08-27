@@ -12,14 +12,15 @@ from ..knowledge.course_db import CourseDB
 from .language import dominant_script
 from .model_conf import ModelConfig, ModelProvider, MODEL_CONFIGS_LIST
 from .query_context import QueryContext, QueryError
-from .tools import (Evidence, PageContext, PLATFORM_COURSE_KEY, ToolLoop,
-                    bundle_search_tool, current_page, offering, render_course_map)
+from .tools import (Ask, Command, Evidence, PageContext, PLATFORM_COURSE_KEY, ToolLoop,
+                    bundle_search_tool, current_page, offering, read_commands,
+                    render_course_map)
 from .tools.course_tools import (course_search_tool, current_page_search_tool,
                                  platform_search_tool)
 from .prompt_templates import (CONTEXT_COURSE, CONTEXT_MAP, CONTEXT_PAGE,
                                NO_COURSE_CONTEXT, PAGE_EXCERPT, PAGE_SUMMARY_ONLY,
-                               PAGE_WHOLE, SCOPE, SCRIPT_INSTRUCTION, SYSTEM_HEADER,
-                               SYSTEM_RULES)
+                               PAGE_WHOLE, REQUIRED_SOURCE, SCOPE, SCRIPT_INSTRUCTION,
+                               SYSTEM_HEADER, SYSTEM_RULES)
 from . import narration
 
 logger = logging.getLogger(__name__)
@@ -76,7 +77,7 @@ async def report_progress(progress_callback: ProgressCallback | None, stage: str
 PROMPT_PARTS: list[tuple[str, tuple[str, ...]]] = [
     ("the page they are on", ("page",)),
     ("course summary and map", ("course_summary", "course_map")),
-    ("how to answer", ("header", "rules")),
+    ("how to answer", ("header", "rules", "required_tool")),
     ("the conversation so far", ("history",)),
     ("their question", ("user_query",)),
 ]
@@ -112,7 +113,7 @@ def _prompt_rows(sizes: dict[str, int], *, page: PageContext | None,
 
 def log_initial_context(*, config: ModelConfig, sizes: dict[str, int],
                         page: PageContext | None, tools: list, exchanges: int,
-                        evidence: Evidence) -> None:
+                        evidence: Evidence, require: str | None = None) -> None:
     """What the model is being given before it has asked for anything -- written before the
     first request, because this is the one number a run can still be stopped over."""
     prompt = sum(sizes.values())
@@ -133,7 +134,9 @@ def log_initial_context(*, config: ModelConfig, sizes: dict[str, int],
     logger.info("%s", narration.block(
         f"initial context for {config.name}{where}",
         narration.table(rows),
-        narration.INDENT + offered))
+        narration.INDENT + offered,
+        narration.INDENT + f"the teacher asked for {require} by name, so the first turn "
+        "has to call it and may call nothing else" if require else ""))
 
 
 def log_total_budget(*, config: ModelConfig, sizes: dict[str, int],
@@ -320,11 +323,14 @@ class AiEngine:
             {"name": "page", "message": CONTEXT_PAGE.format(page=page_segment)},
         ], page
 
-    async def make_system_message(self, query: str, course_key: str, activity_key: str,
-                                  evidence: Evidence,
-                                  query_context: QueryContext | None = None,
-                                  encoding: Encoding | None = None
-                                  ) -> tuple[str, PageContext | None]:
+    async def system_message_parts(self, query: str, course_key: str, activity_key: str,
+                                   evidence: Evidence
+                                   ) -> tuple[list[dict[str, str]], PageContext | None]:
+        """The named parts of the system message, in the order they are joined.
+
+        Returned rather than joined here because the last part depends on the tool list,
+        and the tool list depends on the `PageContext` this call produces.
+        """
         context, page = await self._context_parts(query, course_key, activity_key,
                                                   evidence)
         rules = SYSTEM_RULES.format(
@@ -332,10 +338,7 @@ class AiEngine:
             scope=SCOPE)
         parts = ([{"name": "header", "message": SYSTEM_HEADER}] + context
                  + [{"name": "rules", "message": rules}])
-        if query_context:
-            query_context.add_system_message_parts(
-                parts, encoding or self.fallback_encoding)
-        return "\n".join(part["message"] for part in parts), page
+        return parts, page
 
     # ------------------------------------------------------------------ the tools
 
@@ -363,6 +366,23 @@ class AiEngine:
                 evidence=evidence))
         return tools
 
+    def _required_tool(self, ask: Ask, tools: list) -> Command | None:
+        """What the first turn must fetch, of what the teacher asked for.
+
+        A command whose tool this request does not offer -- no bundle loaded, a model
+        configured without tools -- is dropped rather than raised: the teacher still asked
+        a question, and it is still answerable without the material they hoped for.
+        """
+        offered = {tool.name for tool in tools}
+        for word, command in zip(ask.commands, ask.requires):
+            if command.tool in offered:
+                logger.info("the teacher wrote /%s, so the first turn has to call %s and "
+                            "may call nothing else", word, command.tool)
+                return command
+            logger.info("the teacher wrote /%s, but %s is not offered for this question -- "
+                        "answering without it", word, command.tool)
+        return None
+
     # ------------------------------------------------------------------ answering
 
     async def generate_answer(self,*, history: list[tuple[str,str]], query: str,
@@ -380,27 +400,40 @@ class AiEngine:
             return self.count_tokens(text, encoding)
 
         evidence = Evidence(count_tokens=count)
+        # Read before anything searches with the question: `ask.query` is the sentence
+        # without the commands, and it is that sentence the page is searched with.
+        ask = read_commands(query)
         await report_progress(progress_callback, "reading_page")
-        system_message, page = await self.make_system_message(
-            query, course_key, activity_key, evidence, query_context, encoding)
-        messages = create_message(system_message, history, query)
-        for item in history:
-            query_context.add_encoding_length("history", item[0] + item[1], encoding)
-        query_context.add_encoding_length("user_query", query, encoding)
+        parts, page = await self.system_message_parts(
+            ask.query, course_key, activity_key, evidence)
 
         tools = (self._build_tools(course_key, activity_key, page, evidence)
                  if config.supports_tools else [])
         if not config.supports_tools:
             logger.info("model '%s' is configured without tool support -- answering in one "
                         "turn from the page and course map alone", config.name)
+        demand = self._required_tool(ask, tools)
+        require = demand.tool if demand else None
+        if demand:
+            parts.append({"name": "required_tool",
+                          "message": REQUIRED_SOURCE.format(source=demand.source)})
+
+        query_context.add_system_message_parts(parts, encoding)
+        messages = create_message("\n".join(part["message"] for part in parts),
+                                  history, ask.query)
+        for item in history:
+            query_context.add_encoding_length("history", item[0] + item[1], encoding)
+        query_context.add_encoding_length("user_query", ask.query, encoding)
+
         log_initial_context(config=config, sizes=query_context.token_size, page=page,
-                            tools=tools, exchanges=len(history), evidence=evidence)
+                            tools=tools, exchanges=len(history), evidence=evidence,
+                            require=require)
 
         # The last turn's prompt size, kept for the closing report.
         turn = 0
         prompt_tokens = 0
 
-        async def complete(*, messages, tools, stream):
+        async def complete(*, messages, tools, stream, tool_choice=None):
             nonlocal turn, prompt_tokens
             used = sum(count(m.get("content") or "") for m in messages)
             if used > config.context_size - MAX_ANSWER_TOKENS:
@@ -414,7 +447,11 @@ class AiEngine:
             logger.info("turn %d: %s go to the model%s, %s", turn, narration.tok(used),
                         f" (+{narration.tok(grew)} since the turn before)"
                         if turn > 1 else "",
-                        f"{narration.plural(len(tools or []), 'tool')} offered" if tools
+                        f"{narration.plural(len(tools or []), 'tool')} offered"
+                        + (", and it has to gather from at least one of them before it "
+                           "answers" if tool_choice == "required"
+                           else f", and it has to call {require}" if tool_choice else "")
+                        if tools
                         else "no tools this time -- it has to answer from what it has")
             return await client.chat.completions.create(
                 model=config.name,
@@ -425,6 +462,7 @@ class AiEngine:
                 # `omit` drops the field entirely; `None` would send "tools": null,
                 # which the vLLM servers reject.
                 tools=tools if tools else omit,
+                tool_choice=tool_choice or omit,
                 extra_body=config.extra_body)
 
         # Fetched, then read, then written up: three stages, because the reader waits
@@ -441,8 +479,8 @@ class AiEngine:
         async def on_answer() -> None:
             await report_progress(progress_callback, "writing")
 
-        loop = ToolLoop(complete=complete, tools=tools, on_round=on_round,
-                        on_results=on_results, on_answer=on_answer)
+        loop = ToolLoop(complete=complete, tools=tools, require=require,
+                        on_round=on_round, on_results=on_results, on_answer=on_answer)
 
         async def answer_generator():
             async for delta in loop.stream(messages):

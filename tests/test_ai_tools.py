@@ -13,8 +13,8 @@ import tiktoken
 from plct_server.ai import narration
 from plct_server.ai.engine import AiEngine
 from plct_server.ai.language import CYRILLIC, LATIN, dominant_script
-from plct_server.ai.prompt_templates import SYSTEM_HEADER
-from plct_server.ai.tools import course_tools, knowledge_tools, page_context
+from plct_server.ai.prompt_templates import REQUIRED_SOURCE, SYSTEM_HEADER
+from plct_server.ai.tools import commands, course_tools, knowledge_tools, page_context
 from plct_server.ai.tools.evidence import Evidence
 from plct_server.ai.tools.loop import ToolLoop
 from plct_server.knowledge.chunk_order import chunks_to_tokens, fuse, reconstruct
@@ -137,7 +137,7 @@ class EvidenceTests(unittest.TestCase):
 
 
 class SystemMessageTests(unittest.IsolatedAsyncioTestCase):
-    """The prompt hands the page back out beside its text.
+    """The prompt hands the page back out beside its parts.
 
     `_build_tools` decides from `PageContext.whole` whether `search_current_page` exists at
     all, so the page has to survive the trip. Nothing else covers this: the endpoint tests
@@ -146,7 +146,7 @@ class SystemMessageTests(unittest.IsolatedAsyncioTestCase):
     """
 
     class _Engine:
-        """`make_system_message` reaches for exactly these two things."""
+        """`system_message_parts` reaches for exactly these two things."""
 
         fallback_encoding = tiktoken.get_encoding("o200k_base")
 
@@ -156,25 +156,102 @@ class SystemMessageTests(unittest.IsolatedAsyncioTestCase):
         async def _context_parts(self, query, course_key, activity_key, evidence):
             return [{"name": "course_summary", "message": "kontekst kursa"}], self.page
 
-    async def _message(self, page):
-        return await AiEngine.make_system_message(
+    async def _parts(self, page):
+        return await AiEngine.system_message_parts(
             self._Engine(page), "Sta je rekurzija?", "c", "a",
             Evidence(count_tokens=len))
 
-    async def test_the_page_comes_back_beside_the_message(self):
+    async def test_the_page_comes_back_beside_the_parts(self):
         page = page_context.PageContext(text="deo", whole=False, used=3, total=20)
 
-        message, returned = await self._message(page)
+        parts, returned = await self._parts(page)
 
         self.assertIs(returned, page)
-        self.assertTrue(message.startswith(SYSTEM_HEADER))
-        self.assertIn("kontekst kursa", message)
+        self.assertEqual([part["name"] for part in parts],
+                         ["header", "course_summary", "rules"])
+        self.assertTrue(parts[0]["message"].startswith(SYSTEM_HEADER))
+        self.assertIn("kontekst kursa", parts[1]["message"])
 
     async def test_a_course_with_no_page_still_returns_the_pair(self):
-        message, returned = await self._message(None)
+        parts, returned = await self._parts(None)
 
         self.assertIsNone(returned)
-        self.assertIn("kontekst kursa", message)
+        self.assertIn("kontekst kursa", parts[1]["message"])
+
+
+class CommandTests(unittest.TestCase):
+    """What the teacher writes into the question, and what is left of it afterwards."""
+
+    HANDBOOK = commands.COMMANDS["teaching"]
+
+    def test_a_command_is_found_wherever_it_is_written(self):
+        for question, left in [
+                ("/teaching kako da motivisem ucenike?", "kako da motivisem ucenike?"),
+                ("kako da predam ovu lekciju /teaching kroz rad u grupama?",
+                 "kako da predam ovu lekciju kroz rad u grupama?"),
+                ("kako da ocenim ovu lekciju? /teaching",
+                 "kako da ocenim ovu lekciju?"),
+                # What trails it goes with it, or the sentence comes back malformed.
+                ("/teaching, kako da ocenim rad u grupama?",
+                 "kako da ocenim rad u grupama?")]:
+            with self.subTest(question):
+                ask = commands.read_commands(question)
+                self.assertEqual(ask.query, left)
+                self.assertEqual(ask.commands, ("teaching",))
+                self.assertEqual(ask.requires, (self.HANDBOOK,))
+
+    def test_case_does_not_matter_and_a_repeat_is_one_command(self):
+        ask = commands.read_commands("/Teaching kako da /teaching ocenim rad u grupama?")
+
+        self.assertEqual(ask.commands, ("teaching",))
+        self.assertEqual(ask.query, "kako da ocenim rad u grupama?")
+
+    def test_a_slash_that_is_not_a_command_is_left_alone(self):
+        """Nothing a teacher types is silently eaten, and a path is not a command.
+
+        The slash has to open the text or follow whitespace, which is the whole defence
+        against a URL or a path reading as an instruction.
+        """
+        for question in ["/foo kako da motivisem ucenike?",
+                         "vidi https://petlja.org/teaching -- sta kazu?",
+                         "gde je docs/teaching u repozitorijumu?",
+                         "pogledaj /teaching/uvod u repozitorijumu",
+                         "kako da objasnim 3 / 4 ucenicima?",
+                         "kako da motivisem ucenike?"]:
+            with self.subTest(question):
+                ask = commands.read_commands(question)
+                self.assertEqual(ask.query, question)
+                self.assertEqual(ask.commands, ())
+
+    def test_a_question_that_is_only_a_command_is_not_one(self):
+        """There would be nothing to search for, and inventing it is worse than asking."""
+        ask = commands.read_commands("/teaching")
+
+        self.assertEqual(ask.query, "/teaching")
+        self.assertEqual(ask.commands, ())
+
+    def test_the_lines_of_a_multi_line_question_survive(self):
+        ask = commands.read_commands("/teaching kako da\nradim u grupama?")
+
+        self.assertEqual(ask.query, "kako da\nradim u grupama?")
+
+    def test_a_command_whose_tool_is_not_offered_is_dropped(self):
+        """A server with no handbook bundle still answers the question that was asked."""
+        ask = commands.read_commands("/teaching kako da motivisem ucenike?")
+
+        self.assertIs(AiEngine._required_tool(None, ask,
+                                              [RecordingTool(self.HANDBOOK.tool)]),
+                      self.HANDBOOK)
+        self.assertIsNone(AiEngine._required_tool(None, ask, [RecordingTool()]))
+
+    def test_the_prompt_is_told_the_material_and_never_the_tool(self):
+        """A tool name in the prompt turns a question about teaching into a question about
+        which tool to call. The forcing is done in the request, not in prose."""
+        part = REQUIRED_SOURCE.format(source=self.HANDBOOK.source)
+
+        self.assertNotIn(self.HANDBOOK.tool, part)
+        self.assertNotIn("tool", part)
+        self.assertIn("the professional literature on teaching", part)
 
 
 class ToolLoopTests(unittest.IsolatedAsyncioTestCase):
@@ -183,7 +260,7 @@ class ToolLoopTests(unittest.IsolatedAsyncioTestCase):
             [{"role": "user", "content": "Pitanje"}])])
 
     async def test_a_turn_without_tool_calls_is_the_answer_and_is_streamed(self):
-        async def complete(*, messages, tools, stream):
+        async def complete(*, messages, tools, stream, tool_choice=None):
             return stream_of([Delta(content="Prvi "), Delta(content="red")])
 
         loop = ToolLoop(complete=complete, tools=[RecordingTool()])
@@ -194,7 +271,7 @@ class ToolLoopTests(unittest.IsolatedAsyncioTestCase):
         tool = RecordingTool(output={"passages": [{"text": "gradivo"}]})
         turns = []
 
-        async def complete(*, messages, tools, stream):
+        async def complete(*, messages, tools, stream, tool_choice=None):
             turns.append(messages)
             if len(turns) == 1:
                 # id and name arrive once, arguments a few characters at a time.
@@ -222,7 +299,7 @@ class ToolLoopTests(unittest.IsolatedAsyncioTestCase):
         handbook = RecordingTool("consult_teaching_literature")
         turns = []
 
-        async def complete(*, messages, tools, stream):
+        async def complete(*, messages, tools, stream, tool_choice=None):
             turns.append(messages)
             if len(turns) == 1:
                 return stream_of([Delta(tool_calls=[
@@ -242,7 +319,7 @@ class ToolLoopTests(unittest.IsolatedAsyncioTestCase):
     async def test_tools_are_withheld_on_the_last_round_so_the_model_must_answer(self):
         offered = []
 
-        async def complete(*, messages, tools, stream):
+        async def complete(*, messages, tools, stream, tool_choice=None):
             offered.append(bool(tools))
             if tools:
                 return stream_of([Delta(tool_calls=[
@@ -257,7 +334,7 @@ class ToolLoopTests(unittest.IsolatedAsyncioTestCase):
         tool = RecordingTool()
         turns = []
 
-        async def complete(*, messages, tools, stream):
+        async def complete(*, messages, tools, stream, tool_choice=None):
             turns.append(messages)
             if len(turns) == 1:
                 return stream_of([Delta(tool_calls=[
@@ -272,7 +349,7 @@ class ToolLoopTests(unittest.IsolatedAsyncioTestCase):
     async def test_an_unknown_tool_is_reported_rather_than_raised(self):
         turns = []
 
-        async def complete(*, messages, tools, stream):
+        async def complete(*, messages, tools, stream, tool_choice=None):
             turns.append(messages)
             if len(turns) == 1:
                 return stream_of([Delta(tool_calls=[
@@ -283,10 +360,69 @@ class ToolLoopTests(unittest.IsolatedAsyncioTestCase):
         await self._run(loop)
         self.assertIn("Unknown tool", turns[1][-1]["content"])
 
+    async def test_a_required_source_leaves_the_other_tools_open_in_the_same_round(self):
+        """Naming the tool in `tool_choice` permits that one call and nothing beside it, and
+        teaching *this lesson* needs the lesson too. The first turn is only made to gather.
+        """
+        handbook = RecordingTool("consult_teaching_literature")
+        course = RecordingTool("search_course")
+        choices = []
+
+        async def complete(*, messages, tools, stream, tool_choice=None):
+            choices.append(tool_choice)
+            if len(choices) == 1:
+                return stream_of([Delta(tool_calls=[
+                    Fragment(0, id="a", name=handbook.name,
+                             arguments='{"questions":["x"]}'),
+                    Fragment(1, id="b", name=course.name,
+                             arguments='{"questions":["y"]}')])])
+            return stream_of([Delta(content="Odgovor")])
+
+        loop = ToolLoop(complete=complete, tools=[handbook, course],
+                        require=handbook.name)
+        self.assertEqual(await self._run(loop), "Odgovor")
+        self.assertEqual(choices, ["required", None])
+        self.assertEqual(loop.result.rounds, 1)
+        self.assertEqual(course.calls, [{"questions": ["y"]}])
+
+    async def test_gathering_without_the_required_source_forces_it_next_turn_only_once(self):
+        """The backstop: one turn naming the tool, and then never again -- a choice that
+        keeps re-forcing is a loop that searches every round and never writes."""
+        handbook = RecordingTool("consult_teaching_literature")
+        course = RecordingTool("search_course")
+        choices = []
+
+        async def complete(*, messages, tools, stream, tool_choice=None):
+            choices.append(tool_choice)
+            if len(choices) <= 2:
+                # It reaches for the course both times, ignoring the named choice too.
+                return stream_of([Delta(tool_calls=[
+                    Fragment(0, id=f"c{len(choices)}", name=course.name,
+                             arguments='{"questions":["y"]}')])])
+            return stream_of([Delta(content="Odgovor")])
+
+        loop = ToolLoop(complete=complete, tools=[handbook, course],
+                        require=handbook.name)
+        self.assertEqual(await self._run(loop), "Odgovor")
+        self.assertEqual(choices, [
+            "required", {"type": "function", "function": {"name": handbook.name}}, None])
+
+    async def test_a_required_tool_this_request_does_not_offer_never_reaches_the_wire(self):
+        choices = []
+
+        async def complete(*, messages, tools, stream, tool_choice=None):
+            choices.append(tool_choice)
+            return stream_of([Delta(content="Odgovor")])
+
+        loop = ToolLoop(complete=complete, tools=[RecordingTool()],
+                        require="consult_teaching_literature")
+        await self._run(loop)
+        self.assertEqual(choices, [None])
+
     async def test_no_tools_means_a_single_turn(self):
         turns = []
 
-        async def complete(*, messages, tools, stream):
+        async def complete(*, messages, tools, stream, tool_choice=None):
             turns.append(tools)
             return stream_of([Delta(content="Odgovor")])
 

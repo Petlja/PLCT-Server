@@ -172,7 +172,8 @@ the page in the prompt already covers costs one request, and one needing evidenc
 **The page the teacher is on goes into the prompt as text, not as its summary**
 ([`current_page`](../plct_server/ai/tools/course_tools.py)). Up to `CONTEXT_MAX_CHUNKS` (3) it
 goes in whole, which needs no embedding at all — 95% of pages. A longer page is searched
-with the teacher's own question for the same number of chunks, runs that turn out to be
+with the teacher's own question — with any command already lifted out of it, see 7.2 — for
+the same number of chunks, runs that turn out to be
 adjacent are fused, and the prompt says plainly that it is a sample of N sections. Because
 the median activity is a single chunk, the median context is ~3,000 tokens whatever the cap
 is set to; the cap only bounds the tail. It is deliberately tighter than the tool's widening
@@ -225,6 +226,50 @@ nearer tool instead of reading past it. Pedagogy is now offered before the platf
 the platform description mentions neither assessment nor grading. The concept list is gone
 too, so that second finding is worth re-measuring rather than assuming — `plct-batch-review`
 is the net.
+
+#### The teacher can require a source
+
+Routing is otherwise entirely the model's, and on a question that reads as a plain content
+question it will answer from the page and never open the handbook. A teacher who wants the
+literature's account says so by writing **`/teaching`** in the question. `COMMANDS` in
+[commands.py](../plct_server/ai/tools/commands.py) maps that word to a `Command` — bound to
+the tool object, so renaming a tool cannot detach its command.
+
+**The first turn is made to gather, not to call one named tool.** `tool_choice` is
+`"required"`, and it is the prompt that says which material the answer is built on. Naming
+the function instead permits that one call and *nothing beside it*, and the questions this
+command is for — *how would I teach this lesson using X* — need the lesson as much as the
+literature, in the same round; the rules already ask for exactly that. The name is kept as a
+backstop: if a round gathers without the source the teacher asked for, the next turn is sent
+with `tool_choice` naming it, once, and then never again — a choice that keeps re-forcing is
+a loop that searches every round and never writes.
+
+A command is a word dropped anywhere in the sentence, not a prefix and not a mode:
+`/teaching kako...`, `kako da predam ovu lekciju /teaching kroz rad u grupama?`, or trailing
+at the end all read the same. It is lifted back out — with the space or comma that trails it
+— before anything searches, because the embedder has no notion of a command and a token that
+means nothing to it only pulls the search away from the subject. The slash has to open the
+text or follow whitespace and the word must not run on into another path segment, so a URL
+ending in `/teaching` and a path like `docs/teaching` are ordinary text; so is any `/word`
+not in the table, and so is a question that is *nothing but* its command — there would be
+nothing left to search for.
+
+**The prompt is told the material, never the tool.** A `Command` carries two names for the
+same thing because two readers read them: `tool` is machinery — what the loop watches the
+round's calls for, and what the backstop names — while `source`, *the professional
+literature on teaching*, is what the model is told, in a `required_tool` part appended last
+to the system message. Naming a tool there turns a question about teaching into a question
+about which tool to call. `source` deliberately reuses the words the rules already use for
+that body of knowledge, so the part reads as emphasis on something the model has already
+been told rather than as a new mechanism. The command word is not mentioned either: it was
+an instruction to the server, it is gone from the question by the time the model sees it,
+and repeating it only invites the answer to echo it back at the teacher.
+
+**The model still writes the questions**, which is the point of obliging it to gather rather
+than seeding passages from the teacher's sentence: the handbook is English and the teacher
+writes Serbian, so a server-side search on the raw question would cross that gap with no
+reformulation. A command whose tool this request does not offer — no bundle loaded, a model
+configured without tools — is logged and dropped, never raised.
 
 ### 7.3 Cutoffs: a hit past the threshold is not returned at all
 
