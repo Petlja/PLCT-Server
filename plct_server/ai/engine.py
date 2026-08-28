@@ -135,8 +135,9 @@ def log_initial_context(*, config: ModelConfig, sizes: dict[str, int],
         f"initial context for {config.name}{where}",
         narration.table(rows),
         narration.INDENT + offered,
-        narration.INDENT + f"the teacher asked for {require} by name, so the first turn "
-        "has to call it and may call nothing else" if require else ""))
+        narration.INDENT + f"the teacher asked for {require} by name, so the prompt "
+        "asks for it and the first turn has to gather, from it or any other tool"
+        if require else ""))
 
 
 def log_total_budget(*, config: ModelConfig, sizes: dict[str, int],
@@ -376,8 +377,9 @@ class AiEngine:
         offered = {tool.name for tool in tools}
         for word, command in zip(ask.commands, ask.requires):
             if command.tool in offered:
-                logger.info("the teacher wrote /%s, so the first turn has to call %s and "
-                            "may call nothing else", word, command.tool)
+                logger.info("the teacher wrote /%s, so the prompt asks for %s and the "
+                            "first turn has to gather -- pinned to that tool only if "
+                            "it gathers without it", word, command.tool)
                 return command
             logger.info("the teacher wrote /%s, but %s is not offered for this question -- "
                         "answering without it", word, command.tool)
