@@ -11,11 +11,11 @@ import unittest
 import tiktoken
 
 from plct_server.ai import narration
-from plct_server.ai.engine import AiEngine
+from plct_server.ai.engine import AiEngine, MAX_ANSWER_TOKENS, evidence_budget
 from plct_server.ai.language import CYRILLIC, LATIN, dominant_script
 from plct_server.ai.prompt_templates import REQUIRED_SOURCE, SYSTEM_HEADER
 from plct_server.ai.tools import commands, course_tools, knowledge_tools, page_context
-from plct_server.ai.tools.evidence import Evidence
+from plct_server.ai.tools.evidence import DEFAULT_MAX_EVIDENCE_TOKENS, Evidence
 from plct_server.ai.tools.loop import ToolLoop
 from plct_server.knowledge.chunk_order import chunks_to_tokens, fuse, reconstruct
 
@@ -134,6 +134,29 @@ class EvidenceTests(unittest.TestCase):
         evidence.deliver("b", "y" * 500, record={"activity_key": "act-2"})
 
         self.assertEqual(evidence.provenance, [{"activity_key": "act-1"}])
+
+
+class EvidenceBudgetTests(unittest.TestCase):
+    """What one request may retrieve, once the conversation has taken its share."""
+
+    def test_a_short_conversation_leaves_the_standing_cap_alone(self):
+        self.assertEqual(
+            evidence_budget(context_size=128_000, history_tokens=362),
+            DEFAULT_MAX_EVIDENCE_TOKENS)
+
+    def test_a_long_conversation_cuts_the_cap_to_what_the_window_has_free(self):
+        """The history is resent whole every turn, so it is window this request cannot use."""
+        budget = evidence_budget(context_size=32_000, history_tokens=20_000)
+
+        self.assertEqual(budget, 32_000 - 20_000 - MAX_ANSWER_TOKENS)
+        self.assertLess(budget, DEFAULT_MAX_EVIDENCE_TOKENS)
+
+    def test_a_conversation_past_the_window_leaves_nothing_to_search_with(self):
+        """A negative budget would read as a huge one wherever `remaining` is compared."""
+        budget = evidence_budget(context_size=8_000, history_tokens=9_000)
+
+        self.assertEqual(budget, 0)
+        self.assertTrue(Evidence(max_tokens=budget).exhausted)
 
 
 class SystemMessageTests(unittest.IsolatedAsyncioTestCase):

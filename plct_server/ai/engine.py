@@ -17,6 +17,7 @@ from .tools import (Ask, Command, Evidence, PageContext, PLATFORM_COURSE_KEY, To
                     render_course_map)
 from .tools.course_tools import (course_search_tool, current_page_search_tool,
                                  platform_search_tool)
+from .tools.evidence import DEFAULT_MAX_EVIDENCE_TOKENS
 from .prompt_templates import (CONTEXT_COURSE, CONTEXT_MAP, CONTEXT_PAGE,
                                NO_COURSE_CONTEXT, PAGE_EXCERPT, PAGE_SUMMARY_ONLY,
                                PAGE_WHOLE, REQUIRED_SOURCE, SCOPE, SCRIPT_INSTRUCTION,
@@ -86,6 +87,11 @@ PROMPT_PARTS: list[tuple[str, tuple[str, ...]]] = [
 TOOL_PART_PREFIX = "tool: "
 
 
+def evidence_budget(*, context_size: int, history_tokens: int) -> int:
+    return max(0, min(DEFAULT_MAX_EVIDENCE_TOKENS,
+                      context_size - history_tokens - MAX_ANSWER_TOKENS))
+
+
 def _page_note(page: PageContext | None, *, in_prompt: bool) -> str:
     """Why the page cost what it cost. When it did not fit, the size it was refused at is
     what says whether that was reasonable, so a partial page reports both."""
@@ -125,7 +131,10 @@ def log_initial_context(*, config: ModelConfig, sizes: dict[str, int],
          f"{narration.tok(MAX_ANSWER_TOKENS)} of the rest held back for the answer"),
         ("evidence budget", narration.tok(evidence.max_tokens),
          f"{narration.tok(evidence.tokens)} of it already spent on the page, "
-         f"{narration.tok(evidence.remaining)} left to search with"),
+         f"{narration.tok(evidence.remaining)} left to search with"
+         + ("" if evidence.max_tokens >= DEFAULT_MAX_EVIDENCE_TOKENS else
+            f" -- down from {narration.tok(DEFAULT_MAX_EVIDENCE_TOKENS)}, the "
+            "conversation has taken the rest of the window")),
     ]
     where = f' -- the teacher is on "{page.title}"' if page and page.title else ""
     offered = (f"{narration.plural(len(tools), 'tool')} it may call: "
@@ -401,7 +410,9 @@ class AiEngine:
         def count(text: str) -> int:
             return self.count_tokens(text, encoding)
 
-        evidence = Evidence(count_tokens=count)
+        evidence = Evidence(count_tokens=count, max_tokens=evidence_budget(
+            context_size=config.context_size,
+            history_tokens=sum(count(item[0] + item[1]) for item in history)))
         # Read before anything searches with the question: `ask.query` is the sentence
         # without the commands, and it is that sentence the page is searched with.
         ask = read_commands(query)

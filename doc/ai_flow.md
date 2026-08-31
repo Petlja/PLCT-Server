@@ -470,6 +470,14 @@ given, and material the budget refused, are counted in the call's `note` instead
 as text-free passages — so the model reads one shape, and every one of them is evidence.
 Every passage is labelled with its lesson and activity title, so provenance reaches the model.
 
+The cap itself is per request and sized on the way in, by `engine.evidence_budget`:
+`min(DEFAULT_MAX_EVIDENCE_TOKENS, context_size - history_tokens - MAX_ANSWER_TOKENS)`, floored
+at zero. The standing 35,000 is what a short chat gets; the history is resent whole on every
+turn and nothing trims it yet, so on a long one the cap reads what the window still has free
+rather than promising room that is gone. Retrieved material does not carry across requests —
+history is `(q, a)` text only — which is why the ledger starts empty each time while the
+history row does not.
+
 `ModelConfig.supports_tools` gates the whole thing: a model without it gets one no-tools turn
 from the same system message.
 
