@@ -6,6 +6,7 @@ class QueryError(Exception):
     pass
 
 class QueryContext(BaseModel):
+    model : str = ""  # what answered, after the request's model name or the fallback
     chunk_metadata : list[dict[str,str]] = []
     system_message : str = ""
     token_size : dict[str,int] = {}

@@ -493,8 +493,12 @@ readiness probe, carrying the same dependency so a 200 means the caller may actu
 { type: "progress"; stage: string; message: string; detail?: string }
 { type: "content"; text: string }
 { type: "error"; message: string }
-{ type: "done" }
+{ type: "done"; model: string }
 ```
+
+`done` carries the model that answered rather than the one that was asked for: a request
+may name none, and the fallback (`CHAT_MODEL`) is the engine's, so a caller storing the
+answer has no other way to know what gave it.
 
 Progress stages are a closed set. The engine owns it
 ([`PROGRESS_STAGES`](../plct_server/ai/engine.py)) and the endpoint owns the Serbian wording

@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from plct_server.ai import debug_stream
 from plct_server.ai.engine import PROGRESS_STAGES
+from plct_server.ai.query_context import QueryContext
 from plct_server.endpoints.ui_api import (PROGRESS_MESSAGES, ChatInput,
                                           progress_message, stream_response)
 
@@ -25,7 +26,7 @@ class FakeAiEngine:
             PIPELINE_LOGGER.info("answered after 1 tool round and 2 calls")
             yield "Prvi\nred"
 
-        return answer(), None
+        return answer(), QueryContext(model=kwargs["model_name"])
 
 
 class StreamResponseTests(unittest.IsolatedAsyncioTestCase):
@@ -59,6 +60,8 @@ class StreamResponseTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(events[1]["detail"], "search_course")
         self.assertNotIn("detail", events[0])
         self.assertEqual(events[3]["text"], "Prvi\nred")
+        self.assertEqual(events[4]["model"], "model",
+                         "whoever stores the answer can store what gave it")
 
     async def test_debug_mode_lifts_the_pipeline_loggers_to_info(self):
         """Nothing to tee otherwise: a server runs at WARNING unless told otherwise."""

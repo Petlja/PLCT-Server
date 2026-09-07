@@ -121,7 +121,7 @@ async def stream_response(input: ChatInput) -> AsyncGenerator[bytes, None]:
         # own context and one question's records never land in another's stream.
         with debug_stream.capture(publish_debug if debug else None):
             try:
-                generated_answer, _ = await ai_engine.generate_answer(
+                generated_answer, query_context = await ai_engine.generate_answer(
                     history=history,
                     query=input.question,
                     course_key=course_key,
@@ -132,7 +132,7 @@ async def stream_response(input: ChatInput) -> AsyncGenerator[bytes, None]:
                 async for chunk in generated_answer:
                     await event_queue.put({"type": "content", "text": chunk})
 
-                await event_queue.put({"type": "done"})
+                await event_queue.put({"type": "done", "model": query_context.model})
             except QueryError as error:
                 logger.error(f"QueryError: {error}")
                 await event_queue.put({"type": "error", "message": ERROR_MESSAGE})

@@ -400,8 +400,8 @@ class AiEngine:
                             course_key: str, activity_key: str, model_name,
                             progress_callback: ProgressCallback | None = None
                             ) -> tuple[AsyncIterator[str], QueryContext]:
-        query_context = QueryContext()
         model = model_name or CHAT_MODEL
+        query_context = QueryContext(model=model)
         config = self.get_model_config(model)
         client = self._get_async_openai_client(requested_model=model)
 

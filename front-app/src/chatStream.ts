@@ -11,7 +11,7 @@ export type ChatEvent =
     | { type: "content"; text: string }
     | DebugEvent
     | { type: "error"; message: string }
-    | { type: "done" };
+    | { type: "done"; model: string };
 
 export async function readChatEvents(
     response: Response,
