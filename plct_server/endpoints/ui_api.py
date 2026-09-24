@@ -5,11 +5,11 @@ from typing import Any, AsyncGenerator, List
 from fastapi import APIRouter, Depends, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from openai import OpenAIError
+from openai import BadRequestError, OpenAIError, RateLimitError
 
 from ..content.server import get_server_content
 from ..ai import debug_stream
-from ..ai.engine import get_ai_engine, QueryError
+from ..ai.engine import get_ai_engine, ContextLengthError, QueryError
 from .auth import require_auth
 
 logger = logging.getLogger(__name__)
@@ -55,7 +55,37 @@ SEARCH_TARGETS = {
     "search_platform_docs": "uputstvo za petlja.org",
 }
 
-ERROR_MESSAGE = "Ima tehničkih problema sa pristupom OpenAI, malo sačekaj pa pokušaj ponovo"
+# What a failure says, under the name it is known by. Everything the reader can do nothing
+# about collapses into the generic line; the two they can act on -- start over, or wait --
+# are told apart. A wire contract, like the progress stages: the code is what lets the
+# Petlja platform say the same thing in the course's language, which only it knows, and a
+# code it has not heard of leaves it the message below to fall back on.
+ERROR_MESSAGES = {
+    "error": "Ima tehničkih problema sa pristupom OpenAI, malo sačekaj pa pokušaj ponovo",
+    "context_length": ("Ovaj razgovor je predug da bi se nastavio. Osveži stranicu i "
+                       "postavi pitanje u novom razgovoru"),
+    "rate_limit": "Trenutno stiže previše pitanja. Sačekaj minut pa pokušaj ponovo",
+}
+
+
+def error_code(error: Exception) -> str:
+    """Which failure this is, in the platform's terms.
+
+    The upstream refusal is read as well as our own count: for a model with no encoding of
+    its own the count is an estimate (`FALLBACK_ENCODING`), so a prompt can pass here and
+    still be refused there.
+    """
+    if isinstance(error, ContextLengthError) or (
+            isinstance(error, BadRequestError) and error.code == "context_length_exceeded"):
+        return "context_length"
+    if isinstance(error, RateLimitError):
+        return "rate_limit"
+    return "error"
+
+
+def error_event(error: Exception) -> dict[str, str]:
+    code = error_code(error)
+    return {"type": "error", "code": code, "message": ERROR_MESSAGES[code]}
 
 
 def progress_message(stage: str, detail: str | None) -> str:
@@ -121,7 +151,7 @@ async def stream_response(input: ChatInput) -> AsyncGenerator[bytes, None]:
         # own context and one question's records never land in another's stream.
         with debug_stream.capture(publish_debug if debug else None):
             try:
-                generated_answer, query_context = await ai_engine.generate_answer(
+                generated_answer, _ = await ai_engine.generate_answer(
                     history=history,
                     query=input.question,
                     course_key=course_key,
@@ -132,16 +162,16 @@ async def stream_response(input: ChatInput) -> AsyncGenerator[bytes, None]:
                 async for chunk in generated_answer:
                     await event_queue.put({"type": "content", "text": chunk})
 
-                await event_queue.put({"type": "done", "model": query_context.model})
+                await event_queue.put({"type": "done"})
             except QueryError as error:
                 logger.error(f"QueryError: {error}")
-                await event_queue.put({"type": "error", "message": ERROR_MESSAGE})
+                await event_queue.put(error_event(error))
             except OpenAIError as error:
                 logger.warning(f"Error while calling OpenAI API: {error}")
-                await event_queue.put({"type": "error", "message": ERROR_MESSAGE})
-            except Exception:
+                await event_queue.put(error_event(error))
+            except Exception as error:
                 logger.exception("Unexpected error while streaming chat response")
-                await event_queue.put({"type": "error", "message": ERROR_MESSAGE})
+                await event_queue.put(error_event(error))
             finally:
                 await event_queue.put(None)
 

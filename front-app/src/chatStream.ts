@@ -10,8 +10,14 @@ export type ChatEvent =
     | { type: "progress"; stage: string; message: string; detail?: string }
     | { type: "content"; text: string }
     | DebugEvent
-    | { type: "error"; message: string }
-    | { type: "done"; model: string };
+    // `code` names the failure ("error", "context_length", "rate_limit") for a
+    // consumer that words it itself; this one shows the message as it comes.
+    | { type: "error"; code: string; message: string }
+    | { type: "done" };
+
+/** A failure the server worded for the reader, as opposed to one this code ran into.
+ * Only these messages are fit to show: the rest name statuses and exceptions. */
+export class ChatError extends Error {}
 
 export async function readChatEvents(
     response: Response,

@@ -5,6 +5,10 @@ from tiktoken import Encoding
 class QueryError(Exception):
     pass
 
+class ContextLengthError(QueryError):
+    """The prompt no longer fits the model's window. Told apart from the rest because the
+    reader has to do something about it -- retrying the same conversation cannot work."""
+
 class QueryContext(BaseModel):
     model : str = ""  # what answered, after the request's model name or the fallback
     chunk_metadata : list[dict[str,str]] = []

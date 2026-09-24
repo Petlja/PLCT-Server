@@ -11,7 +11,7 @@ from ..knowledge import BundleSource, COURSES_KEY, KnowledgeStore
 from ..knowledge.course_db import CourseDB
 from .language import dominant_script
 from .model_conf import ModelConfig, ModelProvider, MODEL_CONFIGS_LIST
-from .query_context import QueryContext, QueryError
+from .query_context import ContextLengthError, QueryContext, QueryError
 from .tools import (Ask, Command, Evidence, PageContext, PLATFORM_COURSE_KEY, ToolLoop,
                     bundle_search_tool, current_page, offering, read_commands,
                     render_course_map)
@@ -450,7 +450,7 @@ class AiEngine:
             nonlocal turn, prompt_tokens
             used = sum(count(m.get("content") or "") for m in messages)
             if used > config.context_size - MAX_ANSWER_TOKENS:
-                raise QueryError((
+                raise ContextLengthError((
                     f"Context too large for model. Tokens used: {used}",
                     f"Response tokens: {MAX_ANSWER_TOKENS}",
                     f"Model token limit: {config.context_size}"))

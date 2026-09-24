@@ -3,11 +3,14 @@ import logging
 import unittest
 from unittest.mock import patch
 
+import httpx
+from openai import BadRequestError, RateLimitError
+
 from plct_server.ai import debug_stream
 from plct_server.ai.engine import PROGRESS_STAGES
-from plct_server.ai.query_context import QueryContext
-from plct_server.endpoints.ui_api import (PROGRESS_MESSAGES, ChatInput,
-                                          progress_message, stream_response)
+from plct_server.ai.query_context import ContextLengthError, QueryContext, QueryError
+from plct_server.endpoints.ui_api import (ERROR_MESSAGES, PROGRESS_MESSAGES, ChatInput,
+                                          error_code, progress_message, stream_response)
 
 PIPELINE_LOGGER = logging.getLogger("plct_server.ai.engine")
 
@@ -27,6 +30,23 @@ class FakeAiEngine:
             yield "Prvi\nred"
 
         return answer(), QueryContext(model=kwargs["model_name"])
+
+
+class FailingAiEngine:
+    """Fails the way a run fails once the reader is already waiting: after a stage."""
+
+    def __init__(self, error):
+        self.error = error
+
+    async def generate_answer(self, **kwargs):
+        await kwargs["progress_callback"]("preparing_answer")
+        raise self.error
+
+
+def openai_error(error_class, status_code, body=None):
+    response = httpx.Response(
+        status_code, request=httpx.Request("POST", "https://example.test/v1/chat"))
+    return error_class("upstream refused", response=response, body=body)
 
 
 class StreamResponseTests(unittest.IsolatedAsyncioTestCase):
@@ -60,8 +80,6 @@ class StreamResponseTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(events[1]["detail"], "search_course")
         self.assertNotIn("detail", events[0])
         self.assertEqual(events[3]["text"], "Prvi\nred")
-        self.assertEqual(events[4]["model"], "model",
-                         "whoever stores the answer can store what gave it")
 
     async def test_debug_mode_lifts_the_pipeline_loggers_to_info(self):
         """Nothing to tee otherwise: a server runs at WARNING unless told otherwise."""
@@ -119,6 +137,51 @@ class StreamResponseTests(unittest.IsolatedAsyncioTestCase):
     def test_a_tool_with_no_phrase_falls_back_to_the_generic_line(self):
         self.assertEqual(progress_message("retrieving", "search_something_new"),
                          PROGRESS_MESSAGES["retrieving"])
+
+
+class ErrorEventTests(unittest.IsolatedAsyncioTestCase):
+    """What a failed run tells the reader, and what it calls the failure. The SPA shows the
+    message; the Petlja platform words the code itself, in the course's language."""
+
+    async def failure(self, error):
+        """The event a run that raises `error` ends with."""
+        with patch("plct_server.endpoints.ui_api.get_ai_engine",
+                   return_value=FailingAiEngine(error)), \
+             patch("plct_server.endpoints.ui_api.debug_mode_enabled",
+                   return_value=False):
+            chunks = [chunk async for chunk in stream_response(ChatInput(question="P"))]
+        events = [json.loads(chunk) for chunk in chunks]
+        self.assertEqual([event["type"] for event in events], ["progress", "error"],
+                         "a failure before the answer ends the stream with the error")
+        return events[-1]
+
+    async def test_a_conversation_that_no_longer_fits_says_so(self):
+        event = await self.failure(ContextLengthError(("too long",)))
+
+        self.assertEqual(event["code"], "context_length")
+        self.assertEqual(event["message"], ERROR_MESSAGES["context_length"])
+
+    def test_the_upstream_refusal_counts_as_the_same_failure(self):
+        """Our own count is an estimate for a model with no encoding of its own."""
+        self.assertEqual(
+            error_code(openai_error(BadRequestError, 400,
+                                    {"code": "context_length_exceeded"})),
+            "context_length")
+
+    async def test_a_rate_limited_request_says_to_wait(self):
+        event = await self.failure(openai_error(RateLimitError, 429))
+
+        self.assertEqual(event["code"], "rate_limit")
+        self.assertEqual(event["message"], ERROR_MESSAGES["rate_limit"])
+
+    async def test_every_other_failure_gets_the_generic_message(self):
+        for error in (QueryError(("embedding input too large",)),
+                      openai_error(BadRequestError, 400, {"code": "invalid_request"}),
+                      RuntimeError("something nobody predicted")):
+            with self.subTest(error=type(error).__name__):
+                event = await self.failure(error)
+                self.assertEqual(event["code"], "error")
+                self.assertEqual(event["message"], ERROR_MESSAGES["error"])
 
 
 if __name__ == "__main__":

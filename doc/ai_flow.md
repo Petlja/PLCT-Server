@@ -492,13 +492,28 @@ readiness probe, carrying the same dependency so a 200 means the caller may actu
 ```ts
 { type: "progress"; stage: string; message: string; detail?: string }
 { type: "content"; text: string }
-{ type: "error"; message: string }
-{ type: "done"; model: string }
+{ type: "error"; code: string; message: string }
+{ type: "done" }
 ```
 
-`done` carries the model that answered rather than the one that was asked for: a request
-may name none, and the fallback (`CHAT_MODEL`) is the engine's, so a caller storing the
-answer has no other way to know what gave it.
+`error` says what a failed run tells the reader, twice over: `message` is the line itself,
+and `code` is the name the failure is known by. The SPA shows the message; the Petlja
+platform looks the code up in its own resources, because a course there is taught in
+Serbian in either script or in English and only the platform knows which. A code it has not
+heard of leaves it the message to fall back on, so adding one is not a breaking change.
+
+Three codes, from `ui_api.error_code`. `context_length` -- the conversation no longer fits
+the model's window, either by the engine's own count (`ContextLengthError`) or by the
+upstream `context_length_exceeded`, which is what catches a model whose tokens we can only
+estimate -- says to start a new conversation. `rate_limit` says to wait. `error` is
+everything else -- an unreachable model, a bad key, a bug here -- collapsed into one line,
+since telling those apart would tell the reader nothing they can act on. The platform adds
+two failures of its own before the call ever happens, for a user without the role and one
+who has spent the hour's allowance.
+
+`done` closes the stream and carries nothing: a caller names the model in its request, so
+what answered is what it asked for. A request that names none gets the engine's fallback
+(`CHAT_MODEL`), which is a caller's to know rather than something reported back.
 
 Progress stages are a closed set. The engine owns it
 ([`PROGRESS_STAGES`](../plct_server/ai/engine.py)) and the endpoint owns the Serbian wording

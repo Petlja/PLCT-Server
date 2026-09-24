@@ -14,7 +14,7 @@ import Select from 'react-select';
 import { AppContext } from "../AppContext";
 import  ChatSampleQuestions from "./ChatSampleQuestions";
 import { useSearchParams } from 'react-router';
-import { readChatEvents } from "../chatStream";
+import { ChatError, readChatEvents } from "../chatStream";
 import { DebugLine, DebugPanel, appendDebug } from "./DebugPanel";
 import "./Chat.css";
 
@@ -187,7 +187,7 @@ export function Chat() {
                         setDebugLines(previous => appendDebug(previous, event));
                         break;
                     case "error":
-                        throw new Error(event.message);
+                        throw new ChatError(event.message);
                     case "done":
                         setProgressMessage("");
                         setQuestions(defaultQuestions);
@@ -196,7 +196,9 @@ export function Chat() {
             });
             setHistory([...history, { q: textContent, a: answerText }]);
         } catch (error) {
-            const errorMessage = error instanceof Error
+            // A status code or a dropped connection has nothing to say to a teacher:
+            // only the server's own wording is passed on.
+            const errorMessage = error instanceof ChatError
                 ? error.message
                 : "Došlo je do greške pri generisanju odgovora";
             const inMessage: MessageModel = {
