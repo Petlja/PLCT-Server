@@ -49,6 +49,12 @@ MODEL_CONFIGS_LIST = [
         context_size=128_000
     ),
     ModelConfig(
+        name="gpt-5.4",
+        provider = ModelProvider.OPENAI,
+        type = "chat",
+        context_size=128_000
+    ),
+    ModelConfig(
         name="meta-llama/Llama-3.1-70B-Instruct",
         provider = ModelProvider.VLLM,
         type = "chat",
@@ -80,6 +86,15 @@ MODEL_CONFIGS_LIST = [
         provider = ModelProvider.VLLM,
         type = "chat",
         context_size=32_768
+    ),
+    ModelConfig(
+        # vLLM reports a 262144 max model len for this one, but it is compared
+        # head-to-head against the Qwen entries above, so it gets their context
+        # size rather than an advantage none of the test cases need.
+        name="mistralai/Ministral-3-14B-Instruct-2512-BF16",
+        provider = ModelProvider.VLLM,
+        type = "chat",
+        context_size=32_768
     )
-    
+
 ]
